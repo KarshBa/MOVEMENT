@@ -92,6 +92,17 @@ const REQUIRED_HEADERS = [
   "Proportion-Rank", "Proportion-Ratio"
 ];
 
+// Normalize header cell text: trim, drop wrapping quotes / smart quotes, collapse spaces, lowercase
+function normalizeHeader(s) {
+  return String(s ?? '')
+    .trim()
+    .replace(/^['"`“”]+|['"`“”]+$/g, '')   // strip surrounding quotes
+    .replace(/\s+/g, ' ')                  // collapse interior whitespace
+    .toLowerCase();
+}
+
+const REQUIRED_HEADERS_NORM = REQUIRED_HEADERS.map(normalizeHeader);
+
 function pad13(s) {
   const digits = String(s ?? '').replace(/\D+/g, '');
   return digits.padStart(13, '0');
@@ -176,9 +187,32 @@ async function parseUploadedFile(filePath, originalName) {
 }
 
 function validateHeaders(obj) {
-  const keys = Object.keys(obj);
-  const missing = REQUIRED_HEADERS.filter(h => !keys.includes(h));
+  const seenNorm = new Set(Object.keys(obj).map(normalizeHeader));
+  const missing = [];
+
+  for (let i = 0; i < REQUIRED_HEADERS.length; i++) {
+    const wantNorm = REQUIRED_HEADERS_NORM[i];
+    if (!seenNorm.has(wantNorm)) missing.push(REQUIRED_HEADERS[i]);
+  }
+
   return { ok: missing.length === 0, missing };
+}
+
+function normalizeRowsToRequired(rows) {
+  return rows.map(r => {
+    const out = {};
+    // Build a lookup from normalized header -> original key
+    const keyMap = {};
+    for (const k of Object.keys(r)) keyMap[normalizeHeader(k)] = k;
+
+    for (let i = 0; i < REQUIRED_HEADERS.length; i++) {
+      const wanted = REQUIRED_HEADERS[i];
+      const nk = REQUIRED_HEADERS_NORM[i];
+      const srcKey = keyMap[nk];
+      out[wanted] = srcKey ? r[srcKey] : '';
+    }
+    return out;
+  });
 }
 
 async function parseCsv(filePath, originalName) {
@@ -199,10 +233,9 @@ async function parseCsv(filePath, originalName) {
   if (rows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
 
   const { ok, missing } = validateHeaders(rows[0]);
-  if (!ok) return { rows: [], missing };
+if (!ok) return { rows: [], missing };
 
-  return { rows, missing: [] };
-}
+return { rows: normalizeRowsToRequired(rows), missing: [] };
 
 async function parseXlsb(filePath, originalName) {
   const wb = XLSX.readFile(filePath, { cellDates: false });
@@ -218,10 +251,9 @@ async function parseXlsb(filePath, originalName) {
   if (rows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
 
   const { ok, missing } = validateHeaders(rows[0]);
-  if (!ok) return { rows: [], missing };
+if (!ok) return { rows: [], missing };
 
-  return { rows, missing: [] };
-}
+return { rows: normalizeRowsToRequired(rows), missing: [] };
 
 // ---- API routes
 
