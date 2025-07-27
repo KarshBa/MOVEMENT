@@ -15,7 +15,7 @@
         <input id="file" type="file" accept=".csv,.xlsb" />
       </div>
 
-      <button id="btnUpload" disabled>Upload</button>
+      <button id="btnUpload" type="button" disabled>Upload</button>
       <button id="btnRefresh" class="secondary">Refresh Services</button>
       <span id="uploadHint" class="muted">Max size: 10 MB (configurable)</span>
     </section>
@@ -54,14 +54,26 @@
     const MAX_MB = Number(new URLSearchParams(location.search).get('max') || 10);
     uploadHint.textContent = `Max size: ${MAX_MB} MB (configurable)`;
 
+    function isAllowedUploadFile(file) {
+      if (!file) return false;
+      const name = String(file.name || '').trim().toLowerCase();
+      return name.endsWith('.csv') || name.endsWith('.xlsb');
+    }
+
     fileInput.addEventListener('change', () => {
-      btnUpload.disabled = !fileInput.files.length;
       errorBox.style.display = 'none';
+      const file = fileInput.files?.[0];
+      const ok = isAllowedUploadFile(file);
+      btnUpload.disabled = !ok;
+      if (file && !ok) {
+        errorBox.innerHTML = `<strong>Error:</strong> Only .csv or .xlsb files are accepted.`;
+        errorBox.style.display = '';
+      }
     });
 
     btnUpload.addEventListener('click', async () => {
       const file = fileInput.files[0];
-      if (!file) return;
+      if (!isAllowedUploadFile(file)) return;
       btnUpload.disabled = true;
 
       try {
@@ -72,7 +84,7 @@
       } catch (err) {
         showError(err);
       } finally {
-        btnUpload.disabled = false;
+        btnUpload.disabled = true;
       }
     });
 
