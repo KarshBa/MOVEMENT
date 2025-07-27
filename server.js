@@ -234,15 +234,12 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     parsed = await parseUploadedFile(req.file.path, req.file.originalname);
   } catch (err) {
     console.error('UPLOAD FAILED while parsing:', err);
-    // best-effort cleanup
-    try { fs.unlinkSync(req.file.path); } catch {}
     const payload = { error: 'Upload failed during parse', message: err.message };
     if (process.env.NODE_ENV !== 'production' && err.stack) {
       payload.stack = err.stack.split('\n').slice(0, 10);
     }
     return res.status(500).json(payload);
   } finally {
-    // remove temp file after successful parse too
     try { fs.unlinkSync(req.file.path); } catch {}
   }
 
@@ -319,6 +316,14 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
     return res.status(500).json(payload);
   }
+});
+
+app.get('/api/subdepartments', (req, res) => {
+  const rows = querySubdepartments().map(r => ({
+    subdept_no: r.subdept_no,
+    label: `${r.subdept_no} - ${r.subdept_desc}`
+  }));
+  res.json(rows);
 });
 
 function validateDateRange(q) {
