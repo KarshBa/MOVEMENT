@@ -79,6 +79,16 @@ function ensureDir(dir) {
   try { fs.mkdirSync(dir, { recursive: true }); } catch {}
 }
 
+function remapRowToCanonical(rec) {
+  const out = {};
+  for (const [k, v] of Object.entries(rec)) {
+    const norm = normalizeHeader(k);
+    const canon = CANONICAL_FROM_NORM.get(norm);
+    if (canon) out[canon] = v;
+  }
+  return out;
+}
+
 // ---- Constants and helpers
 
 const REQUIRED_HEADERS = [
@@ -92,14 +102,36 @@ const REQUIRED_HEADERS = [
   "Proportion-Rank", "Proportion-Ratio"
 ];
 
-// Normalize header cell text: trim, drop wrapping quotes / smart quotes, collapse spaces, lowercase
-function normalizeHeader(s) {
-  return String(s ?? '')
-    .trim()
-    .replace(/^['"`“”]+|['"`“”]+$/g, '')   // strip surrounding quotes
-    .replace(/\s+/g, ' ')                  // collapse interior whitespace
-    .toLowerCase();
+function normalizeHeader(h) {
+  if (!h && h !== 0) return '';
+  let s = String(h).trim();
+
+  // strip surrounding quotes if present
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+
+  // collapse internal doubled quotes (e.g., ""Date"")
+  s = s.replace(/^"+|"+$/g, '').trim();
+
+  // lower-case, compress spaces, remove some punctuation that appears in exports
+  s = s.toLowerCase()
+       .replace(/\s+/g, ' ')
+       .replace(/[“”]/g, '"')
+       .replace(/[’]/g, "'")
+       .replace(/[^\w\s\-\/.]/g, ''); // remove stray punctuation except - / .
+
+  return s;
 }
+
+// map from normalized header back to canonical required name
+const CANONICAL_FROM_NORM = (() => {
+  const map = new Map();
+  for (const req of REQUIRED_HEADERS) {
+    map.set(normalizeHeader(req), req);
+  }
+  return map;
+})();
 
 const REQUIRED_HEADERS_NORM = REQUIRED_HEADERS.map(normalizeHeader);
 
@@ -187,36 +219,22 @@ async function parseUploadedFile(filePath, originalName) {
 }
 
 function validateHeaders(obj) {
-  const seenNorm = new Set(Object.keys(obj).map(normalizeHeader));
-  const missing = [];
+  const keys = Object.keys(obj);
 
-  for (let i = 0; i < REQUIRED_HEADERS.length; i++) {
-    const wantNorm = REQUIRED_HEADERS_NORM[i];
-    if (!seenNorm.has(wantNorm)) missing.push(REQUIRED_HEADERS[i]);
+  // Build a set of normalized keys present in the file
+  const normSet = new Set(keys.map(k => normalizeHeader(k)));
+
+  const missing = [];
+  for (const req of REQUIRED_HEADERS) {
+    const norm = normalizeHeader(req);
+    if (!normSet.has(norm)) missing.push(req);
   }
 
   return { ok: missing.length === 0, missing };
 }
 
-function normalizeRowsToRequired(rows) {
-  return rows.map(r => {
-    const out = {};
-    // Build a lookup from normalized header -> original key
-    const keyMap = {};
-    for (const k of Object.keys(r)) keyMap[normalizeHeader(k)] = k;
-
-    for (let i = 0; i < REQUIRED_HEADERS.length; i++) {
-      const wanted = REQUIRED_HEADERS[i];
-      const nk = REQUIRED_HEADERS_NORM[i];
-      const srcKey = keyMap[nk];
-      out[wanted] = srcKey ? r[srcKey] : '';
-    }
-    return out;
-  });
-}
-
 async function parseCsv(filePath, originalName) {
-  const rows = [];
+  const rawRows = [];
   await new Promise((resolve, reject) => {
     fs.createReadStream(filePath)
       .pipe(csvParse({
@@ -225,35 +243,41 @@ async function parseCsv(filePath, originalName) {
         bom: true,
         trim: true
       }))
-      .on('data', (rec) => rows.push(rec))
+      .on('data', (rec) => rawRows.push(rec))
       .on('end', resolve)
       .on('error', reject);
   });
 
-  if (rows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
+  if (rawRows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
 
-  const { ok, missing } = validateHeaders(rows[0]);
-if (!ok) return { rows: [], missing };
+  const firstRemapped = remapRowToCanonical(rawRows[0]);
+  const { ok, missing } = validateHeaders(firstRemapped);
+  if (!ok) return { rows: [], missing };
 
-return { rows: normalizeRowsToRequired(rows), missing: [] };
+  const rows = rawRows.map(remapRowToCanonical);
+  return { rows, missing: [] };
+}
 
 async function parseXlsb(filePath, originalName) {
   const wb = XLSX.readFile(filePath, { cellDates: false });
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
 
-  const rows = XLSX.utils.sheet_to_json(ws, {
+  const rawRows = XLSX.utils.sheet_to_json(ws, {
     raw: false,
     defval: '',
     header: 0
   });
 
-  if (rows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
+  if (rawRows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
 
-  const { ok, missing } = validateHeaders(rows[0]);
-if (!ok) return { rows: [], missing };
+  const firstRemapped = remapRowToCanonical(rawRows[0]);
+  const { ok, missing } = validateHeaders(firstRemapped);
+  if (!ok) return { rows: [], missing };
 
-return { rows: normalizeRowsToRequired(rows), missing: [] };
+  const rows = rawRows.map(remapRowToCanonical);
+  return { rows, missing: [] };
+}
 
 // ---- API routes
 
