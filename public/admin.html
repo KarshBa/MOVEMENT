@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sales Data Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header><h1>Sales Data Admin</h1></header>
+  <main>
+    <section class="flex" aria-label="controls">
+      <div class="input-group" style="max-width:360px;">
+        <label for="file">Choose file (.csv, .xlsb)</label>
+        <input id="file" type="file" accept=".csv,.xlsb" />
+      </div>
+
+      <button id="btnUpload" disabled>Upload</button>
+      <button id="btnRefresh" class="secondary">Refresh Services</button>
+      <span id="uploadHint" class="muted">Max size: 10 MB (configurable)</span>
+    </section>
+
+    <section id="errorBox" style="display:none;background:#fdecea;color:#d93025;padding:.75rem;border-radius:6px;margin:.75rem 0;"></section>
+
+    <section id="status" aria-live="polite">
+      <div class="page-info">No uploads yet.</div>
+      <table id="resultTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Rows Parsed</th>
+            <th>Inserted</th>
+            <th>Duplicates</th>
+            <th>Sample Dates</th>
+            <th>Elapsed (ms)</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </section>
+  </main>
+  <script type="module" src="./client.js"></script>
+  <script type="module">
+    import { postFile, postJSON } from './client.js';
+
+    const fileInput = document.getElementById('file');
+    const btnUpload = document.getElementById('btnUpload');
+    const btnRefresh = document.getElementById('btnRefresh');
+    const errorBox = document.getElementById('errorBox');
+    const tbody = document.getElementById('tbody');
+    const table = document.getElementById('resultTable');
+    const uploadHint = document.getElementById('uploadHint');
+
+    const MAX_MB = Number(new URLSearchParams(location.search).get('max') || 10);
+    uploadHint.textContent = `Max size: ${MAX_MB} MB (configurable)`;
+
+    fileInput.addEventListener('change', () => {
+      btnUpload.disabled = !fileInput.files.length;
+      errorBox.style.display = 'none';
+    });
+
+    btnUpload.addEventListener('click', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      btnUpload.disabled = true;
+
+      try {
+        const res = await postFile('/api/upload', file);
+        renderResult(res);
+        table.style.display = '';
+        fileInput.value = '';
+      } catch (err) {
+        showError(err);
+      } finally {
+        btnUpload.disabled = false;
+      }
+    });
+
+    btnRefresh.addEventListener('click', async () => {
+      btnRefresh.disabled = true;
+      try {
+        await postJSON('/api/refresh', {});
+        alert('Refresh completed.');
+      } catch (err) {
+        showError(err);
+      } finally {
+        btnRefresh.disabled = false;
+      }
+    });
+
+    function renderResult(res) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td data-label="file">${escapeHtml(res.fileName)}</td>
+        <td data-label="rows parsed">${res.rowsParsed}</td>
+        <td data-label="inserted">${res.inserted}</td>
+        <td data-label="duplicates">${res.ignored}</td>
+        <td data-label="sample dates">${(res.sampleDates || []).join(', ')}</td>
+        <td data-label="elapsed">${res.elapsedMs}</td>
+      `;
+      tbody.prepend(tr);
+    }
+
+    function showError(err) {
+      const msg = err?.message || 'Upload failed';
+      let detail = '';
+      if (err?.data?.missingHeaders) {
+        detail = `<div><strong>Missing headers:</strong> ${err.data.missingHeaders.join(', ')}</div>`;
+      }
+      errorBox.innerHTML = `<div><strong>Error:</strong> ${escapeHtml(msg)}</div>${detail}`;
+      errorBox.style.display = '';
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    }
+  </script>
+</body>
+</html>
