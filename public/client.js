@@ -27,6 +27,12 @@ export async function postFile(url, file) {
   return r.json();
 }
 
+export function isAllowedUploadFile(file) {
+  if (!file) return false;
+  const name = (file.name || '').toLowerCase().trim();
+  return name.endsWith('.csv') || name.endsWith('.xlsb');
+}
+
 async function mkErr(r) {
   let data = null;
   try { data = await r.json(); } catch {}
