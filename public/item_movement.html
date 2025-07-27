@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Item Movement</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header><h1>Item Movement</h1></header>
+  <main>
+    <section class="flex" aria-label="filters">
+      <div class="input-group" style="max-width:220px;">
+        <label for="start">Start date</label>
+        <input id="start" type="date" />
+      </div>
+      <div class="input-group" style="max-width:220px;">
+        <label for="end">End date</label>
+        <input id="end" type="date" />
+      </div>
+
+      <div class="input-group" style="max-width:420px;">
+        <label for="subdept">Sub-department</label>
+        <select id="subdept"></select>
+      </div>
+
+      <div class="input-group" style="max-width:420px;">
+        <label for="upcs">UPCs (comma, space, or newline separated)</label>
+        <textarea id="upcs" rows="3" style="width:100%;padding:.55rem;border:1px solid #ccc;border-radius:6px;"></textarea>
+      </div>
+
+      <div class="input-group" style="max-width:420px;">
+        <label><input type="checkbox" id="toggleAdvanced" /> Advanced subdept range</label>
+        <div class="flex" id="advWrap" style="display:none;">
+          <div class="input-group" style="max-width:160px;">
+            <label for="subStart">Start</label>
+            <input id="subStart" type="number" inputmode="numeric" />
+          </div>
+          <div class="input-group" style="max-width:160px;">
+            <label for="subEnd">End</label>
+            <input id="subEnd" type="number" inputmode="numeric" />
+          </div>
+        </div>
+      </div>
+
+      <button id="btnSubmit">Submit</button>
+      <button id="btnExport" class="secondary">Export CSV</button>
+    </section>
+
+    <div id="info" class="page-info">Set filters and submit.</div>
+
+    <table id="results" style="display:none;">
+      <thead>
+        <tr>
+          <th>Item-Code</th>
+          <th>Item-Brand</th>
+          <th>Item-POS description</th>
+          <th>Sub-department-Number</th>
+          <th>Sub-department-Description</th>
+          <th>Category-Number</th>
+          <th>Category-Description</th>
+          <th>Vendor-ID</th>
+          <th>Vendor-Name</th>
+          <th>Units-Sum</th>
+          <th>Amount-Sum</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </main>
+
+  <script type="module" src="./client.js"></script>
+  <script type="module">
+    import { getJSON, postJSON, pad13, buildQueryString } from './client.js';
+
+    const start = document.getElementById('start');
+    const end = document.getElementById('end');
+    const subdept = document.getElementById('subdept');
+    const upcs = document.getElementById('upcs');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const btnExport = document.getElementById('btnExport');
+    const info = document.getElementById('info');
+    const tbody = document.getElementById('tbody');
+    const table = document.getElementById('results');
+
+    const toggleAdvanced = document.getElementById('toggleAdvanced');
+    const advWrap = document.getElementById('advWrap');
+    const subStart = document.getElementById('subStart');
+    const subEnd = document.getElementById('subEnd');
+
+    toggleAdvanced.addEventListener('change', () => {
+      advWrap.style.display = toggleAdvanced.checked ? '' : 'none';
+    });
+
+    // Load subdepartments
+    (async () => {
+      const opts = await getJSON('/api/subdepartments');
+      for (const o of opts) {
+        const option = document.createElement('option');
+        option.value = o.subdept_no;
+        option.textContent = o.label;
+        subdept.appendChild(option);
+      }
+    })();
+
+    btnSubmit.addEventListener('click', async () => {
+      const f = readFilters();
+      if (!f.start || !f.end) return alert('Please select start and end dates.');
+
+      btnSubmit.disabled = true;
+      try {
+        let rows;
+        if (f.upcs && f.upcs.length) {
+          rows = await postJSON('/api/search-upcs', {
+            start: f.start, end: f.end,
+            upcs: f.upcs,
+            ...f.subdeptPayload
+          });
+        } else {
+          const qs = buildQueryString({ start: f.start, end: f.end, ...f.subdeptPayload });
+          rows = await getJSON('/api/range?' + qs);
+        }
+        render(rows, f);
+      } catch (err) {
+        alert(err?.message || 'Query failed');
+      } finally {
+        btnSubmit.disabled = false;
+      }
+    });
+
+    btnExport.addEventListener('click', () => {
+      const f = readFilters();
+      if (!f.start || !f.end) return alert('Please select dates first.');
+      const params = {
+        start: f.start,
+        end: f.end,
+        ...f.subdeptPayload
+      };
+      if (f.upcs && f.upcs.length) {
+        params.upcs = f.upcs.map(pad13).join(',');
+      }
+      const qs = buildQueryString(params);
+      location.href = '/api/export?' + qs;
+    });
+
+    function readFilters() {
+      const f = {
+        start: start.value,
+        end: end.value,
+        upcs: parseUpcs(upcs.value),
+        subdeptPayload: {}
+      };
+
+      if (toggleAdvanced.checked && subStart.value && subEnd.value) {
+        f.subdeptPayload.subdept_start = Number(subStart.value);
+        f.subdeptPayload.subdept_end = Number(subEnd.value);
+      } else if (subdept.value) {
+        f.subdeptPayload.subdept = Number(subdept.value);
+      }
+      return f;
+    }
+
+    function parseUpcs(text) {
+      return text.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).map(pad13);
+    }
+
+    function render(rows, f) {
+      tbody.innerHTML = '';
+      for (const r of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td data-label="Item-Code">${r['Item-Code']}</td>
+          <td data-label="Item-Brand">${escapeHtml(r['Item-Brand'] || '')}</td>
+          <td data-label="Item-POS description">${escapeHtml(r['Item-POS description'] || '')}</td>
+          <td data-label="Sub-department-Number">${r['Sub-department-Number'] ?? ''}</td>
+          <td data-label="Sub-department-Description">${escapeHtml(r['Sub-department-Description'] || '')}</td>
+          <td data-label="Category-Number">${r['Category-Number'] ?? ''}</td>
+          <td data-label="Category-Description">${escapeHtml(r['Category-Description'] || '')}</td>
+          <td data-label="Vendor-ID">${escapeHtml(r['Vendor-ID'] || '')}</td>
+          <td data-label="Vendor-Name">${escapeHtml(r['Vendor-Name'] || '')}</td>
+          <td data-label="Units-Sum">${r['Units-Sum'] ?? 0}</td>
+          <td data-label="Amount-Sum">${r['Amount-Sum'] ?? 0}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+      const total = rows.length;
+      const subTxt = f.subdeptPayload.subdept
+        ? `Subdept ${f.subdeptPayload.subdept}`
+        : (f.subdeptPayload.subdept_start ? `Subdept ${f.subdeptPayload.subdept_start}-${f.subdeptPayload.subdept_end}` : 'All subdepts');
+      const modeTxt = (f.upcs && f.upcs.length) ? `UPCs: ${f.upcs.length}` : 'All items';
+      info.textContent = `${f.start} → ${f.end} • ${subTxt} • ${modeTxt} • ${total} items`;
+      table.style.display = '';
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    }
+  </script>
+</body>
+</html>
