@@ -9,7 +9,9 @@ import morgan from 'morgan';
 import crypto from 'crypto';
 import { parse as csvParse } from 'csv-parse';
 import { format as csvFormat } from '@fast-csv/format';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx/xlsx.mjs';
+// wire node fs for readFile / writeFile in the ESM build
+XLSX.set_fs(fs);
 import { parse as parseDateFns, format as formatDate, isValid } from 'date-fns';
 
 import { basicAuth } from './auth.js';
@@ -52,7 +54,11 @@ app.use(express.static(PUBLIC_DIR, {
 
 const upload = multer({
   storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, osTmpDir()),
+    destination: (req, file, cb) => {
+  const dir = osTmpDir();
+  ensureDir(dir);
+  cb(null, dir);
+},
     filename: (req, file, cb) => cb(null, Date.now() + '-' + sanitize(file.originalname))
   }),
   limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
@@ -67,6 +73,10 @@ function osTmpDir() {
 }
 function sanitize(name) {
   return name.replace(/[^\w.\- ]+/g, '_');
+}
+
+function ensureDir(dir) {
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
 }
 
 // ---- Constants and helpers
@@ -215,17 +225,24 @@ async function parseXlsb(filePath, originalName) {
 
 // ---- API routes
 
-app.post('/api/upload', upload.single('file'), async (req, res, next) => {
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  const started = Date.now();
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
-  const startHr = process.hrtime.bigint();
   let parsed;
   try {
     parsed = await parseUploadedFile(req.file.path, req.file.originalname);
   } catch (err) {
-    return next(err);
+    console.error('UPLOAD FAILED while parsing:', err);
+    // best-effort cleanup
+    try { fs.unlinkSync(req.file.path); } catch {}
+    const payload = { error: 'Upload failed during parse', message: err.message };
+    if (process.env.NODE_ENV !== 'production' && err.stack) {
+      payload.stack = err.stack.split('\n').slice(0, 10);
+    }
+    return res.status(500).json(payload);
   } finally {
-    // cleanup temp file
+    // remove temp file after successful parse too
     try { fs.unlinkSync(req.file.path); } catch {}
   }
 
@@ -236,78 +253,72 @@ app.post('/api/upload', upload.single('file'), async (req, res, next) => {
     });
   }
 
-  const rows = parsed.rows;
-  const prepared = [];
-  const sampleDates = new Set();
+  try {
+    const rows = parsed.rows;
+    const prepared = [];
+    const sampleDates = new Set();
 
-  for (const r of rows) {
-    const date_iso = parseDateToISO(r['Date']);
-    if (!date_iso) continue; // skip invalid
+    for (const r of rows) {
+      const date_iso = parseDateToISO(r['Date']);
+      if (!date_iso) continue;
 
-    const item_code = pad13(r['Item-Code']);
+      const row = {
+        date_iso,
+        item_code: pad13(r['Item-Code']),
+        item_brand: (r['Item-Brand'] || '').trim(),
+        item_pos_desc: (r['Item-POS description'] || '').trim(),
+        subdept_no: Number.parseInt(r['Sub-department-Number']) || 0,
+        subdept_desc: (r['Sub-department-Description'] || '').trim(),
+        category_no: Number.parseInt(r['Category-Number']) || 0,
+        category_desc: (r['Category-Description'] || '').trim(),
+        vendor_id: (r['Vendor-ID'] || '').trim(),
+        vendor_name: (r['Vendor-Name'] || '').trim(),
+        units_sum: numberOrZero(r['Units-Sum']),
+        amount_sum: numberOrZero(r['Amount-Sum']),
+        weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
+        bl_profit: numberOrZero(r['Bottom line-Profit']),
+        bl_margin: numberOrZero(r['Bottom line-Margin']),
+        bl_rank: numberOrZero(r['Bottom line-Rank']),
+        bl_ratio: numberOrZero(r['Bottom line-Ratio']),
+        prop_rank: numberOrZero(r['Proportion-Rank']),
+        prop_ratio: numberOrZero(r['Proportion-Ratio']),
+        source_filename: req.file.originalname
+      };
 
-    const row = {
-      date_iso,
-      item_code,
-      item_brand: (r['Item-Brand'] || '').trim(),
-      item_pos_desc: (r['Item-POS description'] || '').trim(),
-      subdept_no: Number.parseInt(r['Sub-department-Number']) || 0,
-      subdept_desc: (r['Sub-department-Description'] || '').trim(),
-      category_no: Number.parseInt(r['Category-Number']) || 0,
-      category_desc: (r['Category-Description'] || '').trim(),
-      vendor_id: (r['Vendor-ID'] || '').trim(),
-      vendor_name: (r['Vendor-Name'] || '').trim(),
-      units_sum: numberOrZero(r['Units-Sum']),
-      amount_sum: numberOrZero(r['Amount-Sum']),
-      weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
-      bl_profit: numberOrZero(r['Bottom line-Profit']),
-      bl_margin: numberOrZero(r['Bottom line-Margin']),
-      bl_rank: numberOrZero(r['Bottom line-Rank']),
-      bl_ratio: numberOrZero(r['Bottom line-Ratio']),
-      prop_rank: numberOrZero(r['Proportion-Rank']),
-      prop_ratio: numberOrZero(r['Proportion-Ratio']),
-      source_filename: req.file.originalname
-    };
-
-    row.content_hash = sha256(canonicalize(row));
-    prepared.push(row);
-    if (date_iso) sampleDates.add(date_iso);
-  }
-
-  let before = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
-  insertManyTxns(prepared);
-  let after = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
-  const inserted = after - before;
-  const ignored = prepared.length - inserted;
-
-  // Sync subdepartments from rows
-  const subPairs = [];
-  for (const r of prepared) {
-    if (r.subdept_no && r.subdept_desc) {
-      subPairs.push([r.subdept_no, r.subdept_desc]);
+      row.content_hash = sha256(canonicalize(row));
+      prepared.push(row);
+      sampleDates.add(date_iso);
     }
+
+    const before = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
+    insertManyTxns(prepared);
+    const after = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
+
+    // sync subdepartments
+    const subPairs = [];
+    for (const r of prepared) {
+      if (r.subdept_no && r.subdept_desc) subPairs.push([r.subdept_no, r.subdept_desc]);
+    }
+    if (subPairs.length) upsertSubdepartments(subPairs);
+
+    const elapsedMs = Date.now() - started;
+
+    return res.json({
+      fileName: req.file.originalname,
+      rowsParsed: parsed.rows.length,
+      inserted: after - before,
+      ignored: prepared.length - (after - before),
+      sampleDates: Array.from(sampleDates).sort(),
+      elapsedMs
+    });
+  } catch (err) {
+    console.error('UPLOAD FAILED during DB insert:', err);
+    const payload = { error: 'Upload failed during insert', message: err.message };
+    if (process.env.NODE_ENV !== 'production' && err.stack) {
+      payload.stack = err.stack.split('\n').slice(0, 10);
+    }
+    return res.status(500).json(payload);
   }
-  if (subPairs.length) upsertSubdepartments(subPairs);
-
-  const endHr = process.hrtime.bigint();
-  const ms = Number(endHr - startHr) / 1e6;
-
-  return res.json({
-    fileName: req.file.originalname,
-    rowsParsed: rows.length,
-    inserted,
-    ignored,
-    sampleDates: Array.from(sampleDates).sort(),
-    elapsedMs: Math.round(ms)
-  });
-});
-
-app.get('/api/subdepartments', (req, res) => {
-  const rows = querySubdepartments().map(r => ({
-    subdept_no: r.subdept_no,
-    label: `${r.subdept_no} - ${r.subdept_desc}`
-  }));
-  res.json(rows);
 });
 
 function validateDateRange(q) {
@@ -397,8 +408,11 @@ app.use((err, req, res, next) => {
   if (err.message && /only \.csv or \.xlsb/i.test(err.message)) {
     return res.status(400).json({ error: err.message });
   }
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: `File too large. Max ${MAX_UPLOAD_MB} MB.` });
+  }
   console.error(err);
-  res.status(500).json({ error: 'Internal Server Error' });
+  res.status(500).json({ error: 'Internal Server Error', message: err.message });
 });
 
 app.listen(PORT, () => {
