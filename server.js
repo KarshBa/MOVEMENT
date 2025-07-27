@@ -105,22 +105,23 @@ const REQUIRED_HEADERS = [
 function normalizeHeader(h) {
   if (!h && h !== 0) return '';
   let s = String(h).trim();
-
-  // strip surrounding quotes if present
+  // strip one level of surrounding quotes (common in exports)
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     s = s.slice(1, -1).trim();
   }
-
-  // collapse internal doubled quotes (e.g., ""Date"")
+  // collapse doubled quotes
   s = s.replace(/^"+|"+$/g, '').trim();
-
-  // lower-case, compress spaces, remove some punctuation that appears in exports
-  s = s.toLowerCase()
-       .replace(/\s+/g, ' ')
-       .replace(/[“”]/g, '"')
-       .replace(/[’]/g, "'")
-       .replace(/[^\w\s\-\/.]/g, ''); // remove stray punctuation except - / .
-
+  // normalize weird whitespace & punctuation:
+  // NBSP -> space
+  s = s.replace(/\u00A0/gu, ' ');
+  // all unicode dash/hyphen variants -> ASCII hyphen
+  s = s.replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/gu, '-');
+  // smart quotes -> ASCII
+  s = s.replace(/[“”]/gu, '"').replace(/[’]/gu, "'");
+  // lowercase & collapse whitespace
+  s = s.toLowerCase().replace(/\s+/gu, ' ');
+  // drop everything except letters/numbers/space/-/./
+  s = s.replace(/[^\p{L}\p{N}\s\-\/.]/gu, '');
   return s;
 }
 
@@ -218,19 +219,23 @@ async function parseUploadedFile(filePath, originalName) {
   }
 }
 
-function validateHeaders(obj) {
-  const keys = Object.keys(obj);
-
-  // Build a set of normalized keys present in the file
-  const normSet = new Set(keys.map(k => normalizeHeader(k)));
-
+function validateHeadersFromRaw(rawObj) {
+  const normSet = new Set(Object.keys(rawObj).map(normalizeHeader));
   const missing = [];
   for (const req of REQUIRED_HEADERS) {
-    const norm = normalizeHeader(req);
-    if (!normSet.has(norm)) missing.push(req);
+    if (!normSet.has(normalizeHeader(req))) missing.push(req);
   }
-
   return { ok: missing.length === 0, missing };
+}
+
+function debugHeaders(prefix, rawObj) {
+  if (!process.env.DEBUG_HEADERS) return;
+  const rows = Object.keys(rawObj).map(k => {
+    const norm = normalizeHeader(k);
+    const canon = CANONICAL_FROM_NORM.get(norm) || '(NO MATCH)';
+    return { raw: k, norm, canon };
+  });
+  console.log(prefix, rows);
 }
 
 async function parseCsv(filePath, originalName) {
@@ -249,9 +254,8 @@ async function parseCsv(filePath, originalName) {
   });
 
   if (rawRows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
-
-  const firstRemapped = remapRowToCanonical(rawRows[0]);
-  const { ok, missing } = validateHeaders(firstRemapped);
+  debugHeaders('CSV headers:', rawRows[0]);
+  const { ok, missing } = validateHeadersFromRaw(rawRows[0]);
   if (!ok) return { rows: [], missing };
 
   const rows = rawRows.map(remapRowToCanonical);
@@ -270,9 +274,8 @@ async function parseXlsb(filePath, originalName) {
   });
 
   if (rawRows.length === 0) return { rows: [], missing: REQUIRED_HEADERS };
-
-  const firstRemapped = remapRowToCanonical(rawRows[0]);
-  const { ok, missing } = validateHeaders(firstRemapped);
+  debugHeaders('XLSB headers:', rawRows[0]);
+  const { ok, missing } = validateHeadersFromRaw(rawRows[0]);
   if (!ok) return { rows: [], missing };
 
   const rows = rawRows.map(remapRowToCanonical);
