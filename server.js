@@ -124,7 +124,10 @@ const SYNONYMS = new Map([
   ['quantity',               'Units-Sum'],
   ['amount',                 'Amount-Sum'],
   ['weight/volume',          'Weight/Volume-Sum'],
-  // harmless extras we ignore:
+  ['category-number',        'Category-Number'],
+  ['category-description',   'Category-Description'],
+  ['vendor-id',              'Vendor-ID'],
+  ['vendor-name',            'Vendor-Name'],
   ['transaction-number',     null],
   ['operator validated',     null],
 ]);
@@ -198,10 +201,10 @@ function parseDateToISO(v) {
 
   const candidates = [
     'yyyy-MM-dd',
-    'MM/dd/yyyy',
-    'M/d/yyyy',
-    'M/d/yy',
-    'yyyy/M/d'
+    'MM/dd/yyyy','M/d/yyyy','M/d/yy',
+    'dd/MM/yyyy','d/M/yyyy','d/M/yy',
+    'yyyy/M/d',
+    'dd-MMM-yy','dd-MMM-yyyy' // e.g., 05-Jul-24
   ];
 
   for (const fmt of candidates) {
@@ -223,7 +226,12 @@ function parseDateToISO(v) {
 
 function numberOrZero(v) {
   if (v === null || v === undefined || v === '') return 0;
-  const n = Number(String(v).replace(/,/g, '')); // in case of thousand separators
+  const s = String(v).trim()
+    .replace(/\s+/g, '')
+    .replace(/,/g, '')
+    .replace(/%$/, '')          // strip trailing percent
+    .replace(/^\((.*)\)$/, '-$1'); // (123.45) -> -123.45
+  const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
 
