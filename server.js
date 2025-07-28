@@ -30,13 +30,15 @@ const BATCH_SIZE = Number(process.env.BATCH_SIZE || 1000);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600,
-  standardHeaders: true,
-  legacyHeaders: false
-  // make rate limiting use the real client IP when behind a proxy
-  keyGenerator: ipKeyGenerator(),
-  // keep validations on; with trust proxy = 1 this will not warn
-  validate: { trustProxy: true, xForwardedForHeader: true }
+  limit: 600,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+
+  // Use the helper so IPv6s are subnet-trimmed consistently
+  keyGenerator: (req, res) => ipKeyGenerator(req),
+
+  // Optional: tune how IPv6 /64s are collapsed (default 64).
+  // ipv6Subnet: 64,
 });
 
 app.set('trust proxy', 1);
