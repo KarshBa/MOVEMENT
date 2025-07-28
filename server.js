@@ -89,6 +89,17 @@ function remapRowToCanonical(rec) {
   return out;
 }
 
+function fillDefaultsToRequired(rec) {
+  const out = {};
+  for (const key of REQUIRED_HEADERS) {
+    let v = rec[key];
+    if (v == null) v = '';
+    if (NUMERIC_HEADERS.has(key)) v = numberOrZero(v);
+    out[key] = v;
+  }
+  return out;
+}
+
 // ---- Constants and helpers
 
 const REQUIRED_HEADERS = [
@@ -101,6 +112,40 @@ const REQUIRED_HEADERS = [
   "Bottom line-Rank", "Bottom line-Ratio",
   "Proportion-Rank", "Proportion-Ratio"
 ];
+
+// Accept alternate header names from your .xlsb export
+const SYNONYMS = new Map([
+  ['main code',              'Item-Code'],
+  ['pos description',        'Item-POS description'],
+  ['totalizer-number',       'Sub-department-Number'],
+  ['totalizer-description',  'Sub-department-Description'],
+  ['quantity',               'Units-Sum'],
+  ['amount',                 'Amount-Sum'],
+  ['weight/volume',          'Weight/Volume-Sum'],
+  // harmless extras we ignore:
+  ['transaction-number',     null],
+  ['operator validated',     null],
+]);
+
+// The smallest set we truly need to ingest a row
+const MIN_HEADERS = [
+  'Date',
+  'Item-Code',
+  'Item-POS description',
+  'Sub-department-Number',
+  'Sub-department-Description',
+  'Units-Sum',
+  'Amount-Sum',
+  'Weight/Volume-Sum'
+];
+
+const NUMERIC_HEADERS = new Set([
+  'Units-Sum','Amount-Sum','Weight/Volume-Sum',
+  'Bottom line-Profit','Bottom line-Margin',
+  'Bottom line-Rank','Bottom line-Ratio',
+  'Proportion-Rank','Proportion-Ratio',
+  'Category-Number','Sub-department-Number'
+]);
 
 function normalizeHeader(h) {
   if (!h && h !== 0) return '';
@@ -130,6 +175,10 @@ const CANONICAL_FROM_NORM = (() => {
   const map = new Map();
   for (const req of REQUIRED_HEADERS) {
     map.set(normalizeHeader(req), req);
+  }
+  for (const [alt, canon] of SYNONYMS) {
+    if (!canon) continue; // synonym we intentionally ignore
+    map.set(normalizeHeader(alt), canon);
   }
   return map;
 })();
@@ -220,12 +269,15 @@ async function parseUploadedFile(filePath, originalName) {
 }
 
 function validateHeadersFromRaw(rawObj) {
-  const normSet = new Set(Object.keys(rawObj).map(normalizeHeader));
-  const missing = [];
-  for (const req of REQUIRED_HEADERS) {
-    if (!normSet.has(normalizeHeader(req))) missing.push(req);
+  const presentCanon = new Set();
+  for (const k of Object.keys(rawObj)) {
+    const canon = CANONICAL_FROM_NORM.get(normalizeHeader(k));
+    if (canon) presentCanon.add(canon);
   }
-  return { ok: missing.length === 0, missing };
+  const missingAll = REQUIRED_HEADERS.filter(h => !presentCanon.has(h));
+  const missingMin = MIN_HEADERS.filter(h => !presentCanon.has(h));
+  // We proceed if the minimum set is satisfied.
+  return { ok: missingMin.length === 0, missing: missingAll };
 }
 
 function debugHeaders(prefix, rawObj) {
@@ -258,7 +310,7 @@ async function parseCsv(filePath, originalName) {
   const { ok, missing } = validateHeadersFromRaw(rawRows[0]);
   if (!ok) return { rows: [], missing };
 
-  const rows = rawRows.map(remapRowToCanonical);
+  const rows = rawRows.map(remapRowToCanonical).map(fillDefaultsToRequired);
   return { rows, missing: [] };
 }
 
@@ -278,7 +330,7 @@ async function parseXlsb(filePath, originalName) {
   const { ok, missing } = validateHeadersFromRaw(rawRows[0]);
   if (!ok) return { rows: [], missing };
 
-  const rows = rawRows.map(remapRowToCanonical);
+  const rows = rawRows.map(remapRowToCanonical).map(fillDefaultsToRequired);
   return { rows, missing: [] };
 }
 
