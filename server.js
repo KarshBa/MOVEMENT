@@ -518,6 +518,19 @@ app.get('/api/export', (req, res) => {
   csvStream.end();
 });
 
+// add near other routes, remove later
+app.get('/api/debug/stats', (req, res) => {
+  const count = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
+  const recent = db.prepare(`
+    SELECT date_iso, subdept_no, COUNT(*) c
+    FROM raw_transactions
+    GROUP BY date_iso, subdept_no
+    ORDER BY date_iso DESC, subdept_no
+    LIMIT 20
+  `).all();
+  res.json({ count, recent });
+});
+
 // Error handler
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
