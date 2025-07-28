@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import express from 'express';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import multer from 'multer';
 import morgan from 'morgan';
 import crypto from 'crypto';
@@ -26,16 +26,20 @@ const ROOT = process.cwd();
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 10);
-const BATCH_SIZE = Number(process.env.BATCH_SIZE || 5000);
+const BATCH_SIZE = Number(process.env.BATCH_SIZE || 1000);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 600,
   standardHeaders: true,
   legacyHeaders: false
+  // make rate limiting use the real client IP when behind a proxy
+  keyGenerator: ipKeyGenerator(),
+  // keep validations on; with trust proxy = 1 this will not warn
+  validate: { trustProxy: true, xForwardedForHeader: true }
 });
 
-app.set('trust proxy', true); // or 1
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet());
 app.use(limiter);
@@ -375,7 +379,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
 
   let processed = 0;
-  let insertedTotal = 0;
+
+  const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
+  const beforeAll = countRows();
   const sampleDates = new Set();
   const subPairs = new Set();
   let batch = [];
@@ -417,20 +423,14 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
 
     if (batch.length >= BATCH_SIZE) {
-      const before = countRows();
-      insertManyTxns(batch);         // reuse your helper (it should wrap a transaction)
-      const after = countRows();
-      insertedTotal += (after - before);
+      insertManyTxns(batch);   // transaction inside helper
       batch.length = 0;              // clear without realloc
     }
   }
 
   // flush remaining
   if (batch.length) {
-    const before = countRows();
     insertManyTxns(batch);
-    const after = countRows();
-    insertedTotal += (after - before);
     batch.length = 0;
   }
 
@@ -442,7 +442,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     });
     upsertSubdepartments(pairs);
   }
-
+    
+  const afterAll = beforeAll === undefined ? countRows() : countRows();
+  const insertedTotal = afterAll - beforeAll;
   const ignored = processed - insertedTotal;
 
   return res.json({
