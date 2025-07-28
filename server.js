@@ -34,6 +34,7 @@ const limiter = rateLimit({
   legacyHeaders: false
 });
 
+app.set('trust proxy', true); // or 1
 app.disable('x-powered-by');
 app.use(helmet());
 app.use(limiter);
