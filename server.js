@@ -26,6 +26,7 @@ const ROOT = process.cwd();
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 10);
+const BATCH_SIZE = Number(process.env.BATCH_SIZE || 5000);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -363,71 +364,95 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 
   try {
-    const rows = parsed.rows;
-    const prepared = [];
-    const sampleDates = new Set();
+  const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
 
-    for (const r of rows) {
-      const date_iso = parseDateToISO(r['Date']);
-      if (!date_iso) continue;
+  let processed = 0;
+  let insertedTotal = 0;
+  const sampleDates = new Set();
+  const subPairs = new Set();
+  let batch = [];
 
-      const row = {
-        date_iso,
-        item_code: pad13(r['Item-Code']),
-        item_brand: (r['Item-Brand'] || '').trim(),
-        item_pos_desc: (r['Item-POS description'] || '').trim(),
-        subdept_no: Number.parseInt(r['Sub-department-Number']) || 0,
-        subdept_desc: (r['Sub-department-Description'] || '').trim(),
-        category_no: Number.parseInt(r['Category-Number']) || 0,
-        category_desc: (r['Category-Description'] || '').trim(),
-        vendor_id: (r['Vendor-ID'] || '').trim(),
-        vendor_name: (r['Vendor-Name'] || '').trim(),
-        units_sum: numberOrZero(r['Units-Sum']),
-        amount_sum: numberOrZero(r['Amount-Sum']),
-        weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
-        bl_profit: numberOrZero(r['Bottom line-Profit']),
-        bl_margin: numberOrZero(r['Bottom line-Margin']),
-        bl_rank: numberOrZero(r['Bottom line-Rank']),
-        bl_ratio: numberOrZero(r['Bottom line-Ratio']),
-        prop_rank: numberOrZero(r['Proportion-Rank']),
-        prop_ratio: numberOrZero(r['Proportion-Ratio']),
-        source_filename: req.file.originalname
-      };
+  for (const r of parsed.rows) {
+    const date_iso = parseDateToISO(r['Date']);
+    if (!date_iso) continue;
 
-      row.content_hash = sha256(canonicalize(row));
-      prepared.push(row);
-      sampleDates.add(date_iso);
+    const row = {
+      date_iso,
+      item_code: pad13(r['Item-Code']),
+      item_brand: (r['Item-Brand'] || '').trim(),
+      item_pos_desc: (r['Item-POS description'] || '').trim(),
+      subdept_no: Number.parseInt(r['Sub-department-Number']) || 0,
+      subdept_desc: (r['Sub-department-Description'] || '').trim(),
+      category_no: Number.parseInt(r['Category-Number']) || 0,
+      category_desc: (r['Category-Description'] || '').trim(),
+      vendor_id: (r['Vendor-ID'] || '').trim(),
+      vendor_name: (r['Vendor-Name'] || '').trim(),
+      units_sum: numberOrZero(r['Units-Sum']),
+      amount_sum: numberOrZero(r['Amount-Sum']),
+      weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
+      bl_profit: numberOrZero(r['Bottom line-Profit']),
+      bl_margin: numberOrZero(r['Bottom line-Margin']),
+      bl_rank: numberOrZero(r['Bottom line-Rank']),
+      bl_ratio: numberOrZero(r['Bottom line-Ratio']),
+      prop_rank: numberOrZero(r['Proportion-Rank']),
+      prop_ratio: numberOrZero(r['Proportion-Ratio']),
+      source_filename: req.file.originalname
+    };
+
+    row.content_hash = sha256(canonicalize(row));
+
+    batch.push(row);
+    processed++;
+    sampleDates.add(date_iso);
+    if (row.subdept_no && row.subdept_desc) {
+      subPairs.add(`${row.subdept_no}::${row.subdept_desc}`);
     }
 
-    const before = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
-    insertManyTxns(prepared);
-    const after = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
-
-    // sync subdepartments
-    const subPairs = [];
-    for (const r of prepared) {
-      if (r.subdept_no && r.subdept_desc) subPairs.push([r.subdept_no, r.subdept_desc]);
+    if (batch.length >= BATCH_SIZE) {
+      const before = countRows();
+      insertManyTxns(batch);         // reuse your helper (it should wrap a transaction)
+      const after = countRows();
+      insertedTotal += (after - before);
+      batch.length = 0;              // clear without realloc
     }
-    if (subPairs.length) upsertSubdepartments(subPairs);
-
-    const elapsedMs = Date.now() - started;
-
-    return res.json({
-      fileName: req.file.originalname,
-      rowsParsed: parsed.rows.length,
-      inserted: after - before,
-      ignored: prepared.length - (after - before),
-      sampleDates: Array.from(sampleDates).sort(),
-      elapsedMs
-    });
-  } catch (err) {
-    console.error('UPLOAD FAILED during DB insert:', err);
-    const payload = { error: 'Upload failed during insert', message: err.message };
-    if (process.env.NODE_ENV !== 'production' && err.stack) {
-      payload.stack = err.stack.split('\n').slice(0, 10);
-    }
-    return res.status(500).json(payload);
   }
+
+  // flush remaining
+  if (batch.length) {
+    const before = countRows();
+    insertManyTxns(batch);
+    const after = countRows();
+    insertedTotal += (after - before);
+    batch.length = 0;
+  }
+
+  // upsert subdepartments (de-duped)
+  if (subPairs.size) {
+    const pairs = Array.from(subPairs).map(s => {
+      const [no, desc] = s.split('::');
+      return [Number(no), desc];
+    });
+    upsertSubdepartments(pairs);
+  }
+
+  const ignored = processed - insertedTotal;
+
+  return res.json({
+    fileName: req.file.originalname,
+    rowsParsed: parsed.rows.length,
+    inserted: insertedTotal,
+    ignored,
+    sampleDates: Array.from(sampleDates).sort(),
+    elapsedMs: Date.now() - started
+  });
+} catch (err) {
+  console.error('UPLOAD FAILED during DB insert:', err);
+  const payload = { error: 'Upload failed during insert', message: err.message };
+  if (process.env.NODE_ENV !== 'production' && err.stack) {
+    payload.stack = err.stack.split('\n').slice(0, 10);
+  }
+  return res.status(500).json(payload);
+}
 });
 
 app.get('/api/subdepartments', (req, res) => {
@@ -519,7 +544,7 @@ app.get('/api/export', (req, res) => {
   csvStream.end();
 });
 
-// add near other routes, remove later
+// debug remove later
 app.get('/api/debug/stats', (req, res) => {
   const count = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
   const recent = db.prepare(`
@@ -530,6 +555,13 @@ app.get('/api/debug/stats', (req, res) => {
     LIMIT 20
   `).all();
   res.json({ count, recent });
+});
+
+// debug remove later
+app.get('/api/_debug_counts', (req, res) => {
+  const raw = db.prepare('SELECT COUNT(*) c FROM raw_transactions').get().c;
+  const subs = db.prepare('SELECT COUNT(*) c FROM subdepartments').get().c;
+  res.json({ raw, subdepartments: subs });
 });
 
 // Error handler
