@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import express from 'express';
 import helmet from 'helmet';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import morgan from 'morgan';
 import crypto from 'crypto';
@@ -34,11 +34,26 @@ const limiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
 
-  // Use the helper so IPv6s are subnet-trimmed consistently
-  keyGenerator: (req, res) => ipKeyGenerator(req),
+  // v7: provide our own key generator and avoid proxy warnings
+  keyGenerator: (req /*, res */) => {
+    const xff = req.headers['x-forwarded-for'];
+    let ip = '';
+    if (typeof xff === 'string' && xff.length) {
+      ip = xff.split(',')[0].trim();
+    } else {
+      ip = (req.ip || '');
+    }
+    // strip port if present
+    ip = ip.replace(/:\d+$/, '');
 
-  // Optional: tune how IPv6 /64s are collapsed (default 64).
-  // ipv6Subnet: 64,
+    // collapse IPv6 to /64 to avoid per-connection keys
+    if (ip.includes(':')) {
+      const parts = ip.split(':');
+      while (parts.length < 8) parts.push('0');
+      return parts.slice(0, 4).join(':'); // first 64 bits
+    }
+    return ip;
+  },
 });
 
 app.set('trust proxy', 1);
