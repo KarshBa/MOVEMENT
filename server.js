@@ -381,8 +381,6 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
 
   let processed = 0;
-
-  const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
   const beforeAll = countRows();
   const sampleDates = new Set();
   const subPairs = new Set();
@@ -445,7 +443,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     upsertSubdepartments(pairs);
   }
     
-  const afterAll = beforeAll === undefined ? countRows() : countRows();
+  const afterAll = countRows();
   const insertedTotal = afterAll - beforeAll;
   const ignored = processed - insertedTotal;
 
@@ -457,6 +455,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     sampleDates: Array.from(sampleDates).sort(),
     elapsedMs: Date.now() - started
   });
+    
 } catch (err) {
   console.error('UPLOAD FAILED during DB insert:', err);
   const payload = { error: 'Upload failed during insert', message: err.message };
