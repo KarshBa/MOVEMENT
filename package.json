@@ -8,8 +8,8 @@
     "node": "20.x"
   },
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon --watch . --ext js,html,css --signal SIGINT server.js"
+  "start": "node --max-old-space-size=512 server.js",
+  "dev": "nodemon --watch . --ext js,html,css --signal SIGINT server.js"
   },
   "dependencies": {
     "@fast-csv/format": "^5.0.0",
