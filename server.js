@@ -21,6 +21,14 @@ import {
   insertUploadMeta
 } from './db.js';
 
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err);
+  // don't process.exit here; let Render restart it if it truly dies
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[FATAL] unhandledRejection:', err);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ROOT = process.cwd();
@@ -454,11 +462,11 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
   }
 
-  // flush remaining
   if (batch.length) {
-    insertManyTxns(batch);
-    batch.length = 0;
-  }
+      console.log('[upload] inserting final batch of', batch.length); // <-- log last batch
+      insertManyTxns(batch);
+      batch.length = 0;
+    }
 
   // upsert subdepartments (de-duped)
   if (subPairs.size) {
