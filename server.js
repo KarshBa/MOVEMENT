@@ -598,6 +598,26 @@ app.get('/api/_debug_counts', (req, res) => {
   res.json({ raw, subdepartments: subs });
 });
 
+// debug remove later
+app.get('/api/debug/storage', (req, res) => {
+  try {
+    const dblist = db.prepare("PRAGMA database_list").all();
+    const rowCount = db.prepare("SELECT COUNT(*) AS c FROM raw_transactions").get().c;
+    const range = db.prepare("SELECT MIN(date_iso) AS minDate, MAX(date_iso) AS maxDate FROM raw_transactions").get();
+    res.json({
+      env_DATA_DIR: process.env.DATA_DIR || null,
+      cwd: process.cwd(),
+      dbFileConstant: /* same value used in db.js */ undefined, // see note below
+      database_list: dblist, // shows the absolute path SQLite is using
+      rowCount,
+      minDate: range.minDate || null,
+      maxDate: range.maxDate || null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/admin/summary', (req, res) => {
   const rowCount = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
   const range = db.prepare('SELECT MIN(date_iso) AS minDate, MAX(date_iso) AS maxDate FROM raw_transactions').get();
