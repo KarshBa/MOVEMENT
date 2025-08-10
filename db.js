@@ -13,8 +13,29 @@ export const db = new Database(DB_FILE, { fileMustExist: false });
 
 const schemaSql = fs.readFileSync(SCHEMA_FILE, 'utf8');
 db.exec(schemaSql);
+// Ensure meta table and unique index exist even if schema.sql didn’t add them
+db.exec(`
+  CREATE TABLE IF NOT EXISTS uploads_meta (
+    id INTEGER PRIMARY KEY,
+    file_name     TEXT NOT NULL,
+    uploaded_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    rows_parsed   INTEGER NOT NULL,
+    inserted      INTEGER NOT NULL,
+    ignored       INTEGER NOT NULL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_raw_content_hash
+    ON raw_transactions(content_hash);
+`);
 
 // --- prepared statements
+const stmtInsertUploadMeta = db.prepare(`
+  INSERT INTO uploads_meta (file_name, rows_parsed, inserted, ignored)
+  VALUES (?, ?, ?, ?)
+`);
+export function insertUploadMeta(fileName, rowsParsed, inserted, ignored) {
+  stmtInsertUploadMeta.run(fileName, rowsParsed, inserted, ignored);
+}
 
 export const stmtInsertTxn = db.prepare(`
   INSERT OR IGNORE INTO raw_transactions (
