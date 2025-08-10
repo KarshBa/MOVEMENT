@@ -8,6 +8,7 @@ const errorBox    = document.getElementById('errorBox');
 const tbody       = document.getElementById('tbody');
 const table       = document.getElementById('resultTable');
 const uploadHint  = document.getElementById('uploadHint');
+const uploadsEmpty = document.getElementById('uploadsEmpty');
 
 const MAX_MB = Number(new URLSearchParams(location.search).get('max') || 10);
 uploadHint.textContent = `Max size: ${MAX_MB} MB (configurable)`;
@@ -39,6 +40,8 @@ btnUpload.addEventListener('click', async () => {
     renderResult(res);
     table.style.display = '';
     fileInput.value = '';
+    await refreshSummary();
+    await refreshHistory();
   } catch (err) {
     showError(err);
   } finally {
@@ -62,23 +65,68 @@ btnRefresh.addEventListener('click', async () => {
 async function refreshSummary() {
   try {
     const r = await fetch('/api/admin/summary', { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(await r.text().catch(()=>'Failed to load summary'));
     const s = await r.json();
+
     const el = document.getElementById('summary');
+    if (!el) return; // in case the element isn't on this page
+
     el.innerHTML = `
-      <div><strong>Total rows:</strong> ${s.rowCount}</div>
+      <div><strong>Total rows:</strong> ${Number(s.rowCount).toLocaleString()}</div>
       <div><strong>Date range on disk:</strong> ${s.minDate ?? '—'} → ${s.maxDate ?? '—'}</div>
       <div><strong>Last upload:</strong> ${
         s.lastUpload
-          ? `${s.lastUpload.file_name} @ ${s.lastUpload.uploaded_at}
-             (parsed: ${s.lastUpload.rows_parsed}, inserted: ${s.lastUpload.inserted}, ignored: ${s.lastUpload.ignored})`
+          ? `${escapeHtml(s.lastUpload.file_name)} @ ${escapeHtml(s.lastUpload.uploaded_at)}
+             (parsed: ${s.lastUpload.rows_parsed.toLocaleString()},
+              inserted: ${s.lastUpload.inserted.toLocaleString()},
+              ignored: ${s.lastUpload.ignored.toLocaleString()})`
           : '—'
       }</div>
     `;
   } catch (e) {
     console.error('summary fetch failed', e);
+    const el = document.getElementById('summary');
+    if (el) el.textContent = `Failed to load summary: ${e.message}`;
   }
 }
-document.addEventListener('DOMContentLoaded', refreshSummary);
+
+async function refreshHistory() {
+  try {
+    const r = await fetch('/api/admin/uploads', { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(await r.text().catch(()=>'Failed to load uploads history'));
+    const rows = await r.json();
+
+    // reuse the existing table body you already use for per-upload results
+    tbody.innerHTML = '';
+    for (const h of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td data-label="file">${escapeHtml(h.file_name)}</td>
+        <td data-label="rows parsed">${Number(h.rows_parsed).toLocaleString()}</td>
+        <td data-label="inserted">${Number(h.inserted).toLocaleString()}</td>
+        <td data-label="duplicates">${Number(h.ignored).toLocaleString()}</td>
+        <td data-label="sample dates">—</td>
+        <td data-label="elapsed">${escapeHtml(h.uploaded_at)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    // Show/hide table and empty state
+    table.style.display = rows.length ? '' : 'none';
+    if (uploadsEmpty) uploadsEmpty.style.display = rows.length ? 'none' : '';
+  } catch (e) {
+    console.error('uploads history fetch failed', e);
+    if (uploadsEmpty) {
+      uploadsEmpty.style.display = '';
+      uploadsEmpty.textContent = `Failed to load history: ${e.message}`;
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await refreshSummary();
+  await refreshHistory();
+});
 
 function renderResult(res) {
   const tr = document.createElement('tr');
