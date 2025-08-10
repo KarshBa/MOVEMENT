@@ -6,14 +6,14 @@ const selSingle  = document.getElementById('subdept');        // single subdept 
 const selStart   = document.getElementById('subdept_start');  // range start (if present)
 const selEnd     = document.getElementById('subdept_end');    // range end (if present)
 
-const btnRun     = document.getElementById('btnRun');
+const btnRun     = document.getElementById('btnRun')    || document.getElementById('btnSubmit');
 const btnExport  = document.getElementById('btnExport');
 const btnSearch  = document.getElementById('btnSearchUpcs');
 
 const upcTextarea = document.getElementById('upcs');          // optional, for UPC search
 const tbody      = document.getElementById('tbody');
-const table      = document.getElementById('resultTable');
-const errorBox   = document.getElementById('errorBox');
+const table      = document.getElementById('resultTable') || document.getElementById('results');
+const errorBox   = document.getElementById('errorBox')    || document.getElementById('info');
 
 function showError(msg) {
   errorBox.textContent = msg;
@@ -57,15 +57,17 @@ function renderRows(rows) {
   for (const r of rows) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td data-label="Date">${r.date_iso ?? ''}</td>
-      <td data-label="Subdept">${r.subdept_no ?? ''}</td>
-      <td data-label="UPC">${r.item_code ?? ''}</td>
-      <td data-label="POS Desc">${escapeHtml(r.item_pos_desc ?? '')}</td>
-      <td data-label="Units">${fmt(r.units_sum)}</td>
-      <td data-label="Amount">${fmt(r.amount_sum)}</td>
-      <td data-label="Weight/Vol">${fmt(r.weight_volume_sum)}</td>
-      <td data-label="Profit">${fmt(r.bl_profit)}</td>
-      <td data-label="Margin">${fmt(r.bl_margin)}</td>
+      <td data-label="UPC">${escapeHtml(r["Item-Code"] ?? '')}</td>
+      <td data-label="Brand">${escapeHtml(r["Item-Brand"] ?? '')}</td>
+      <td data-label="POS Desc">${escapeHtml(r["Item-POS description"] ?? '')}</td>
+      <td data-label="Subdept #">${escapeHtml(r["Sub-department-Number"] ?? '')}</td>
+      <td data-label="Subdept">${escapeHtml(r["Sub-department-Description"] ?? '')}</td>
+      <td data-label="Category #">${escapeHtml(r["Category-Number"] ?? '')}</td>
+      <td data-label="Category">${escapeHtml(r["Category-Description"] ?? '')}</td>
+      <td data-label="Vendor ID">${escapeHtml(r["Vendor-ID"] ?? '')}</td>
+      <td data-label="Vendor">${escapeHtml(r["Vendor-Name"] ?? '')}</td>
+      <td data-label="Units Sum">${fmt(r["Units-Sum"])}</td>
+      <td data-label="Amount Sum">${fmt(r["Amount-Sum"])}</td>
     `;
     tbody.appendChild(tr);
   }
