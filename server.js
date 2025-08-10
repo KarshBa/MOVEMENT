@@ -463,7 +463,12 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const insertedTotal = afterAll - beforeAll;
   const ignored = processed - insertedTotal;
 
-  insertUploadMeta(req.file.originalname, parsed.rows.length, insertedTotal, ignored);
+  // Record upload stats in uploads_meta table
+  try {
+    insertUploadMeta(req.file.originalname, parsed.rows.length, insertedTotal, ignored);
+  } catch (e) {
+    console.warn('insertUploadMeta failed:', e.message);
+  }
 
   return res.json({
     fileName: req.file.originalname,
