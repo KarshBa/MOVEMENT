@@ -392,7 +392,9 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
   let parsed;
   try {
+    console.time('parseUploadedFile');                  // <-- add
     parsed = await parseUploadedFile(req.file.path, req.file.originalname);
+    console.timeEnd('parseUploadedFile');               // <-- add
   } catch (err) {
     console.error('UPLOAD FAILED while parsing:', err);
     const payload = { error: 'Upload failed during parse', message: err.message };
@@ -419,6 +421,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const sampleDates = new Set();
   const subPairs = new Set();
   let batch = [];
+
+  console.log('[upload] rows to process:', parsed.rows.length); // <-- add
 
   for (const r of parsed.rows) {
     const date_iso = parseDateToISO(r['Date']);
@@ -457,7 +461,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
 
     if (batch.length >= BATCH_SIZE) {
-      insertManyTxns(batch);   // transaction inside helper
+      console.log('[upload] inserting batch of', batch.length);
+        insertManyTxns(batch);   // transaction inside helper
       batch.length = 0;              // clear without realloc
     }
   }
@@ -652,16 +657,6 @@ app.get('/api/admin/summary', (req, res) => {
     maxDate: range.maxDate || null,
     lastUpload: last || null
   });
-});
-
-app.get('/api/admin/uploads', (req, res) => {
-  const rows = db.prepare(`
-    SELECT file_name, uploaded_at, rows_parsed, inserted, ignored
-    FROM uploads_meta
-    ORDER BY uploaded_at DESC
-    LIMIT 50
-  `).all();
-  res.json(rows);
 });
 
 // List recent uploads (history)
