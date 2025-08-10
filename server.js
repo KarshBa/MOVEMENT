@@ -17,7 +17,8 @@ import { parse as parseDateFns, format as formatDate, isValid } from 'date-fns';
 import { basicAuth } from './auth.js';
 import {
   db, insertManyTxns, upsertSubdepartments,
-  querySubdepartments, rangeAggregate, upcsAggregate, optimize
+  querySubdepartments, rangeAggregate, upcsAggregate, optimize,
+  insertUploadMeta
 } from './db.js';
 
 const app = express();
@@ -462,6 +463,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const insertedTotal = afterAll - beforeAll;
   const ignored = processed - insertedTotal;
 
+  insertUploadMeta(req.file.originalname, parsed.rows.length, insertedTotal, ignored);
+
   return res.json({
     fileName: req.file.originalname,
     rowsParsed: parsed.rows.length,
@@ -588,6 +591,24 @@ app.get('/api/_debug_counts', (req, res) => {
   const raw = db.prepare('SELECT COUNT(*) c FROM raw_transactions').get().c;
   const subs = db.prepare('SELECT COUNT(*) c FROM subdepartments').get().c;
   res.json({ raw, subdepartments: subs });
+});
+
+app.get('/api/admin/summary', (req, res) => {
+  const rowCount = db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
+  const range = db.prepare('SELECT MIN(date_iso) AS minDate, MAX(date_iso) AS maxDate FROM raw_transactions').get();
+  const last = db.prepare(`
+    SELECT file_name, uploaded_at, rows_parsed, inserted, ignored
+    FROM uploads_meta
+    ORDER BY uploaded_at DESC
+    LIMIT 1
+  `).get();
+
+  res.json({
+    rowCount,
+    minDate: range.minDate || null,
+    maxDate: range.maxDate || null,
+    lastUpload: last || null
+  });
 });
 
 // Error handler
