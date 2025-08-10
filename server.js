@@ -113,6 +113,15 @@ function remapRowToCanonical(rec) {
   return out;
 }
 
+function coerceCentury(d) {
+  const y = d.getFullYear();
+  if (y >= 100) return d;            // already 4-digit year
+  const pivot = (y >= 70) ? 1900 : 2000; // 70–99 -> 19xx, 00–69 -> 20xx (tweak if you want)
+  const adj = new Date(d);
+  adj.setFullYear(pivot + y);
+  return adj;
+}
+
 function fillDefaultsToRequired(rec) {
   const out = {};
   for (const key of REQUIRED_HEADERS) {
@@ -231,10 +240,12 @@ function parseDateToISO(v) {
 
   for (const fmt of candidates) {
     const d = parseDateFns(s, fmt, new Date());
-    if (isValid(d)) return formatDate(d, 'yyyy-MM-dd');
+    if (isValid(d)) {
+      return formatDate(coerceCentury(d), 'yyyy-MM-dd'); // <-- change here
+    }
   }
 
-  // Excel serials?
+  // Excel serials
   if (!isNaN(Number(s))) {
     const serial = Number(s);
     const excelEpoch = new Date(Date.UTC(1899, 11, 30));
@@ -245,7 +256,6 @@ function parseDateToISO(v) {
 
   return null;
 }
-
 function numberOrZero(v) {
   if (v === null || v === undefined || v === '') return 0;
   const s = String(v).trim()
