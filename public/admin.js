@@ -59,6 +59,27 @@ btnRefresh.addEventListener('click', async () => {
   }
 });
 
+async function refreshSummary() {
+  try {
+    const r = await fetch('/api/admin/summary', { credentials: 'same-origin' });
+    const s = await r.json();
+    const el = document.getElementById('summary');
+    el.innerHTML = `
+      <div><strong>Total rows:</strong> ${s.rowCount}</div>
+      <div><strong>Date range on disk:</strong> ${s.minDate ?? '—'} → ${s.maxDate ?? '—'}</div>
+      <div><strong>Last upload:</strong> ${
+        s.lastUpload
+          ? `${s.lastUpload.file_name} @ ${s.lastUpload.uploaded_at}
+             (parsed: ${s.lastUpload.rows_parsed}, inserted: ${s.lastUpload.inserted}, ignored: ${s.lastUpload.ignored})`
+          : '—'
+      }</div>
+    `;
+  } catch (e) {
+    console.error('summary fetch failed', e);
+  }
+}
+document.addEventListener('DOMContentLoaded', refreshSummary);
+
 function renderResult(res) {
   const tr = document.createElement('tr');
   tr.innerHTML = `
