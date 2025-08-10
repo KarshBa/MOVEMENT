@@ -13,6 +13,9 @@ export const db = new Database(DB_FILE, { fileMustExist: false });
 
 const schemaSql = fs.readFileSync(SCHEMA_FILE, 'utf8');
 db.exec(schemaSql);
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('busy_timeout = 5000');
 // Ensure meta table and unique index exist even if schema.sql didn’t add them
 db.exec(`
   CREATE TABLE IF NOT EXISTS uploads_meta (
@@ -27,6 +30,8 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS ux_raw_content_hash
     ON raw_transactions(content_hash);
 `);
+
+console.log('[DB]', 'DATA_DIR=', DATA_DIR, 'DB_FILE=', DB_FILE);
 
 // --- prepared statements
 const stmtInsertUploadMeta = db.prepare(`
