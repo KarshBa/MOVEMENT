@@ -646,6 +646,16 @@ app.get('/api/admin/summary', (req, res) => {
   });
 });
 
+app.get('/api/admin/uploads', (req, res) => {
+  const rows = db.prepare(`
+    SELECT file_name, uploaded_at, rows_parsed, inserted, ignored
+    FROM uploads_meta
+    ORDER BY uploaded_at DESC
+    LIMIT 50
+  `).all();
+  res.json(rows);
+});
+
 // List recent uploads (history)
 app.get('/api/admin/uploads', (req, res) => {
   const rows = db.prepare(`
