@@ -124,6 +124,13 @@ export function searchBrands(q) {
   `).all({ pat });
 }
 
+function buildWhereForBrand(params, where) {
+  if (params.brand) {
+    where.push(`item_brand LIKE @brand COLLATE NOCASE`);
+    params.brand = `%${params.brand.replace(/[%_]/g, s => '\\' + s)}%`;
+  }
+}
+
 export function rangeAggregate(params) {
   const base = buildSelectAggBase();
   const where = [];
@@ -164,6 +171,61 @@ export function optimize() {
   db.exec('PRAGMA optimize; ANALYZE;');
   // Generally avoid VACUUM during heavy use; allow caller to decide.
   try { db.exec('VACUUM;'); } catch { /* ignore if busy */ }
+}
+
+function buildSelectAggBase() {
+  return `
+    SELECT
+      item_code                             AS "Item-Code",
+      MAX(item_brand)                       AS "Item-Brand",
+      MAX(item_pos_desc)                    AS "Item-POS description",
+      MAX(subdept_no)                       AS "Sub-department-Number",
+      MAX(subdept_desc)                     AS "Sub-department-Description",
+      MAX(category_no)                      AS "Category-Number",
+      MAX(category_desc)                    AS "Category-Description",
+      MAX(vendor_id)                        AS "Vendor-ID",
+      MAX(vendor_name)                      AS "Vendor-Name",
+      ROUND(SUM(units_sum), 6)              AS "Units-Sum",
+      ROUND(SUM(amount_sum), 2)             AS "Amount-Sum"
+    FROM raw_transactions
+    WHERE date_iso BETWEEN @start AND @end
+  `;
+}
+
+export function rangeAggregate(params) {
+  const base = buildSelectAggBase();
+  const where = [];
+  buildWhereForSubdept(params, where);
+  buildWhereForBrand(params, where); // <--
+  const sql = [
+    base,
+    where.length ? 'AND ' + where.join(' AND ') : '',
+    `GROUP BY item_code`,
+    `ORDER BY "Amount-Sum" DESC`
+  ].join('\n');
+
+  return db.prepare(sql).all(params);
+}
+
+export function upcsAggregate(params, upcList) {
+  const base = buildSelectAggBase();
+  const where = [];
+  buildWhereForSubdept(params, where);
+  buildWhereForBrand(params, where); // <--
+
+  const placeholders = upcList.map((_, i) => `@upc${i}`).join(',');
+  const bindings = {};
+  upcList.forEach((v, i) => { bindings[`upc${i}`] = v; });
+
+  const sql = [
+    base,
+    `AND item_code IN (${placeholders})`,
+    where.length ? 'AND ' + where.join(' AND ') : '',
+    `GROUP BY item_code`,
+    `ORDER BY "Amount-Sum" DESC`
+  ].join('\n');
+
+  return db.prepare(sql).all({ ...params, ...bindings });
 }
 
 db.exec(`
