@@ -36,3 +36,17 @@ CREATE TABLE IF NOT EXISTS subdepartments (
   subdept_no    INTEGER PRIMARY KEY,
   subdept_desc  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS upload_jobs (
+  id            TEXT PRIMARY KEY,
+  original_name TEXT NOT NULL,
+  tmp_path      TEXT NOT NULL,
+  size_bytes    INTEGER NOT NULL,
+  status        TEXT NOT NULL CHECK (status IN ('queued','processing','done','error')),
+  queued_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at    TEXT,
+  finished_at   TEXT,
+  error         TEXT,
+  result_json   TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_upload_jobs_status ON upload_jobs(status);
