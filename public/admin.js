@@ -34,19 +34,44 @@ btnUpload.addEventListener('click', async () => {
   const file = fileInput.files?.[0];
   if (!isAllowedUploadFile(file)) return;
 
+  errorBox.style.display = 'none';
   btnUpload.disabled = true;
+
   try {
     const res = await postFile('/api/upload', file);
-    renderResult(res);
-    table.style.display = '';
+
+    // New async flow: server returns { id, status: "queued" }
+    if (res && res.id && res.status) {
+      // show a temporary “processing” row
+      const rowEl = showInProgressRow(file.name);
+      table.style.display = '';
+
+      // poll until completed
+      const finalInfo = await pollUploadUntilDone(res.id);
+
+      if (finalInfo.status === 'done' && finalInfo.result) {
+        // replace temp row with actual result
+        replaceRowWithResult(rowEl, finalInfo.result);
+        await refreshSummary();
+        await refreshHistory();
+      } else if (finalInfo.status === 'error') {
+        showError(new Error(finalInfo.error || 'Upload failed'));
+        // remove temp row if you’d like
+        rowEl.remove();
+      }
+    } else {
+      // Back-compat: if server ever returns the old shape
+      renderResult(res);
+      table.style.display = '';
+      await refreshSummary();
+      await refreshHistory();
+    }
+
     fileInput.value = '';
-    await refreshSummary();
-    await refreshHistory();
   } catch (err) {
     showError(err);
   } finally {
-    // require choosing a new file
-    btnUpload.disabled = true;
+    btnUpload.disabled = true; // require choosing a new file
   }
 });
 
@@ -127,6 +152,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshSummary();
   await refreshHistory();
 });
+
+function showInProgressRow(fileName) {
+  const tr = document.createElement('tr');
+  tr.dataset.temp = '1';
+  tr.innerHTML = `
+    <td data-label="file">${escapeHtml(fileName)}</td>
+    <td data-label="rows parsed"><em>processing…</em></td>
+    <td data-label="inserted"><em>—</em></td>
+    <td data-label="duplicates"><em>—</em></td>
+    <td data-label="sample dates"><em>—</em></td>
+    <td data-label="elapsed"><em>—</em></td>
+  `;
+  tbody.prepend(tr);
+  return tr;
+}
+
+function replaceRowWithResult(tempRowEl, result) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td data-label="file">${escapeHtml(result.fileName)}</td>
+    <td data-label="rows parsed">${Number(result.rowsParsed).toLocaleString()}</td>
+    <td data-label="inserted">${Number(result.inserted).toLocaleString()}</td>
+    <td data-label="duplicates">${Number(result.ignored).toLocaleString()}</td>
+    <td data-label="sample dates">${(result.sampleDates || []).join(', ')}</td>
+    <td data-label="elapsed">${Number(result.elapsedMs).toLocaleString()}</td>
+  `;
+  tempRowEl.replaceWith(tr);
+}
+
+// Poll /api/upload-status/:id until {status:"done"| "error"}
+async function pollUploadUntilDone(id, { intervalMs = 1000, maxMs = 5 * 60 * 1000 } = {}) {
+  const start = Date.now();
+  while (true) {
+    const r = await fetch(`/api/upload-status/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(await r.text().catch(()=>'Status check failed'));
+    const info = await r.json();
+
+    if (info.status === 'done' || info.status === 'error') return info;
+
+    if (Date.now() - start > maxMs) {
+      return { status: 'error', error: 'Timed out waiting for upload to finish' };
+    }
+    await new Promise(res => setTimeout(res, intervalMs));
+  }
+}
 
 function renderResult(res) {
   const tr = document.createElement('tr');
