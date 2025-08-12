@@ -33,6 +33,10 @@ db.exec(`
     ON raw_transactions(content_hash);
 `);
 
+db.exec(`
+  CREATE INDEX IF NOT EXISTS ix_raw_brand ON raw_transactions(item_brand COLLATE NOCASE);
+`);
+
 console.log('[DB]', 'DATA_DIR=', DATA_DIR, 'DB_FILE=', DB_FILE);
 
 // --- prepared statements
@@ -105,6 +109,19 @@ function buildWhereForSubdept(params, where) {
   } else if (params.subdept_start != null && params.subdept_end != null) {
     where.push(`subdept_no BETWEEN @subdept_start AND @subdept_end`);
   }
+}
+
+export function searchBrands(q) {
+  // Return up to 20 brands matching q (case-insensitive), ordered by popularity
+  const pat = `%${String(q || '').trim().replace(/[%_]/g, s => '\\' + s)}%`;
+  return db.prepare(`
+    SELECT item_brand AS brand, COUNT(*) AS cnt
+    FROM raw_transactions
+    WHERE item_brand <> '' AND item_brand LIKE @pat ESCAPE '\\'
+    GROUP BY item_brand
+    ORDER BY cnt DESC, brand COLLATE NOCASE ASC
+    LIMIT 20
+  `).all({ pat });
 }
 
 export function rangeAggregate(params) {
