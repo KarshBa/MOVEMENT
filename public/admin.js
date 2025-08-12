@@ -40,40 +40,33 @@ btnUpload.addEventListener('click', async () => {
   try {
     const res = await postFile('/api/upload', file);
 
-    // New async flow: server returns { id, status: "queued" }
-    if (res && res.id && res.status) {
-      // show a temporary “processing” row
-      const rowEl = showInProgressRow(file.name);
-      table.style.display = '';
+    const looksAsync =
+  res && typeof res === 'object' &&
+  typeof res.id === 'string' &&
+  typeof res.status === 'string' &&
+  (res.status === 'queued' || res.status === 'processing');
 
-      // poll until completed
-      const finalInfo = await pollUploadUntilDone(res.id);
-
-      if (finalInfo.status === 'done' && finalInfo.result) {
-        // replace temp row with actual result
-        replaceRowWithResult(rowEl, finalInfo.result);
-        await refreshSummary();
-        await refreshHistory();
-      } else if (finalInfo.status === 'error') {
-        showError(new Error(finalInfo.error || 'Upload failed'));
-        // remove temp row if you’d like
-        rowEl.remove();
-      }
-    } else {
-      // Back-compat: if server ever returns the old shape
-      renderResult(res);
-      table.style.display = '';
-      await refreshSummary();
-      await refreshHistory();
-    }
-
-    fileInput.value = '';
-  } catch (err) {
-    showError(err);
-  } finally {
-    btnUpload.disabled = true; // require choosing a new file
+if (looksAsync) {
+  const rowEl = showInProgressRow(file.name);
+  table.style.display = '';
+  const finalInfo = await pollUploadUntilDone(res.id);
+  if (finalInfo.status === 'done' && finalInfo.result) {
+    replaceRowWithResult(rowEl, finalInfo.result);
+    await refreshSummary();
+    await refreshHistory();
+  } else {
+    showError(new Error(finalInfo.error || 'Upload failed'));
+    rowEl.remove();
   }
-});
+} else if (res && typeof res === 'object' && 'fileName' in res) {
+  // Only render legacy, synchronous responses that actually contain results
+  renderResult(res);
+  table.style.display = '';
+  await refreshSummary();
+  await refreshHistory();
+} else {
+  showError(new Error('Unexpected response from /api/upload'));
+}
 
 btnRefresh.addEventListener('click', async () => {
   btnRefresh.disabled = true;
