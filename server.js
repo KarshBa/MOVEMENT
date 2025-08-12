@@ -18,7 +18,8 @@ import { basicAuth } from './auth.js';
 import {
   db, insertManyTxns, upsertSubdepartments,
   querySubdepartments, rangeAggregate, upcsAggregate, optimize,
-  insertUploadMeta
+  insertUploadMeta,
+  queueCreateJob, queueMarkStarted, queueMarkDone, queueMarkError, queueGetJob, queueNextJob
 } from './db.js';
 
 process.on('uncaughtException', (err) => {
@@ -33,20 +34,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ROOT = process.cwd();
 const PUBLIC_DIR = path.join(ROOT, 'public');
+const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
+const UPLOAD_TMP_DIR = path.join(DATA_DIR, 'uploads');
+ensureDir(UPLOAD_TMP_DIR);
 
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 10);
 const BATCH_SIZE = Number(process.env.BATCH_SIZE || 1000);
-
-// ---- in-memory upload jobs (simple queue)
-const uploads = new Map(); // id -> { status, startedAt, finishedAt, result?, error? }
-const newUploadId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
-
-// optional: keep map from growing forever
-function gcUploads(max = 200) {
-  if (uploads.size <= max) return;
-  const keys = Array.from(uploads.keys());
-  for (let i = 0; i < uploads.size - max; i++) uploads.delete(keys[i]);
-}
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -97,11 +90,7 @@ app.use(express.static(PUBLIC_DIR, {
 
 const upload = multer({
   storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-  const dir = osTmpDir();
-  ensureDir(dir);
-  cb(null, dir);
-},
+    destination: (req, file, cb) => cb(null, UPLOAD_TMP_DIR),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + sanitize(file.originalname))
   }),
   limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
@@ -487,60 +476,73 @@ async function processUploadJob(filePath, originalName) {
   };
 }
 
+let workerRunning = false;
+
+async function runWorkerOnce() {
+  if (workerRunning) return;
+  workerRunning = true;
+  try {
+    while (true) {
+      const job = queueNextJob();
+      if (!job) break;
+
+      // Mark started (idempotent between queued/processing)
+      queueMarkStarted(job.id);
+
+      try {
+        const result = await processUploadJob(job.tmp_path, job.original_name);
+        queueMarkDone(job.id, result);
+      } catch (err) {
+        queueMarkError(job.id, err);
+        console.error('[upload worker] job failed', job.id, err);
+      } finally {
+        // Cleanup file whether success or error
+        try { fs.unlinkSync(job.tmp_path); } catch {}
+      }
+    }
+  } finally {
+    workerRunning = false;
+  }
+}
+// kick on boot and occasionally after enqueue
+setImmediate(runWorkerOnce);
+
 // ---- API routes
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
-  // enqueue + return immediately (avoid Render timeout)
-  const id = newUploadId();
-  uploads.set(id, { status: 'queued', startedAt: Date.now() });
-  gcUploads();
+  // Persist a job row in SQLite
+  const id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+  // Multer already wrote to UPLOAD_TMP_DIR; keep that absolute path
+  const job = {
+    id,
+    original_name: req.file.originalname,
+    tmp_path: req.file.path,              // absolute file path
+    size_bytes: req.file.size || 0
+  };
+  queueCreateJob(job);
 
+  // Return 202 + id for polling
   res.status(202).json({ id, status: 'queued' });
 
-  // background work
-  setImmediate(async () => {
-    const job = uploads.get(id) || { startedAt: Date.now() };
-    try {
-      console.time(`upload:${id}:total`);
-      console.time(`upload:${id}:parse+insert`);
-      const result = await processUploadJob(req.file.path, req.file.originalname);
-      console.timeEnd(`upload:${id}:parse+insert`);
-      uploads.set(id, {
-        status: 'done',
-        startedAt: job.startedAt,
-        finishedAt: Date.now(),
-        result
-      });
-    } catch (err) {
-      uploads.set(id, {
-        status: 'error',
-        startedAt: job.startedAt,
-        finishedAt: Date.now(),
-        error: err.message || String(err)
-      });
-      console.error('Background upload failed:', err);
-    } finally {
-      // always clean up the temp file
-      try { fs.unlinkSync(req.file.path); } catch {}
-      console.timeEnd(`upload:${id}:total`);
-    }
-  });
+  // Nudge the worker
+  setImmediate(runWorkerOnce);
 });
 
 app.get('/api/upload-status/:id', (req, res) => {
-  const info = uploads.get(req.params.id);
-  if (!info) return res.status(404).json({ error: 'not found' });
-  res.json(info);
-});
+  const row = queueGetJob(req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
 
-app.get('/api/subdepartments', (req, res) => {
-  const rows = querySubdepartments().map(r => ({
-    subdept_no: r.subdept_no,
-    label: `${r.subdept_no} - ${r.subdept_desc}`
-  }));
-  res.json(rows);
+  // Shape for the frontend:
+  // { status, result? } for done; { status, error? } for error/processing/queued
+  let body = { status: row.status, startedAt: row.started_at, finishedAt: row.finished_at };
+  if (row.status === 'done' && row.result_json) {
+    body.result = JSON.parse(row.result_json);
+  } else if (row.status === 'error' && row.error) {
+    body.error = row.error;
+  }
+  res.json(body);
 });
 
 function validateDateRange(q) {
