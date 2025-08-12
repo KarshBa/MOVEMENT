@@ -15,7 +15,8 @@ const schemaSql = fs.readFileSync(SCHEMA_FILE, 'utf8');
 db.exec(schemaSql);
 db.pragma('journal_mode = WAL');
 db.pragma('synchronous = NORMAL');
-db.pragma('busy_timeout = 5000');
+db.pragma('temp_store = MEMORY');
+db.pragma('cache_size = -20000'); // ~20MB
 // Ensure meta table and unique index exist even if schema.sql didn’t add them
 db.exec(`
   CREATE TABLE IF NOT EXISTS uploads_meta (
