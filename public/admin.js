@@ -11,7 +11,7 @@ const uploadHint  = document.getElementById('uploadHint');
 const uploadsEmpty = document.getElementById('uploadsEmpty');
 
 const MAX_MB = Number(new URLSearchParams(location.search).get('max') || 10);
-uploadHint.textContent = `Max size: ${MAX_MB} MB (configurable)`;
+if (uploadHint) uploadHint.textContent = `Max size: ${MAX_MB} MB (configurable)`;
 
 function isAllowedUploadFile(file) {
   if (!file) return false;
@@ -67,7 +67,14 @@ if (looksAsync) {
 } else {
   showError(new Error('Unexpected response from /api/upload'));
 }
-
+} catch (err) {
+  showError(err);
+} finally {
+  // require choosing a new file before enabling Upload again
+  btnUpload.disabled = true;
+  if (fileInput) fileInput.value = '';
+}
+}); // <-- closes btnUpload.addEventListener
 btnRefresh.addEventListener('click', async () => {
   btnRefresh.disabled = true;
   try {
