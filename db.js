@@ -147,3 +147,43 @@ export function optimize() {
   // Generally avoid VACUUM during heavy use; allow caller to decide.
   try { db.exec('VACUUM;'); } catch { /* ignore if busy */ }
 }
+
+// ---- durable queue: upload_jobs
+const stmtCreateJob = db.prepare(`
+  INSERT INTO upload_jobs (id, original_name, tmp_path, size_bytes, status)
+  VALUES (@id, @original_name, @tmp_path, @size_bytes, 'queued')
+`);
+const stmtStartJob = db.prepare(`
+  UPDATE upload_jobs
+  SET status='processing', started_at=datetime('now'), error=NULL
+  WHERE id=@id AND status IN ('queued','processing')
+`);
+const stmtFinishJob = db.prepare(`
+  UPDATE upload_jobs
+  SET status='done', finished_at=datetime('now'), result_json=@result_json
+  WHERE id=@id
+`);
+const stmtFailJob = db.prepare(`
+  UPDATE upload_jobs
+  SET status='error', finished_at=datetime('now'), error=@error
+  WHERE id=@id
+`);
+const stmtGetJob = db.prepare(`SELECT * FROM upload_jobs WHERE id=?`);
+const stmtNextJob = db.prepare(`
+  SELECT * FROM upload_jobs
+  WHERE status='queued'
+  ORDER BY queued_at ASC
+  LIMIT 1
+`);
+
+export function queueCreateJob(job) { stmtCreateJob.run(job); }
+export function queueMarkStarted(id) { stmtStartJob.run({ id }); }
+export function queueMarkDone(id, result) {
+  stmtFinishJob.run({ id, result_json: JSON.stringify(result) });
+}
+export function queueMarkError(id, err) {
+  const msg = (err?.stack || err?.message || String(err)).slice(0, 4000);
+  stmtFailJob.run({ id, error: msg });
+}
+export function queueGetJob(id) { return stmtGetJob.get(id); }
+export function queueNextJob() { return stmtNextJob.get(); }
