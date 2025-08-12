@@ -515,6 +515,14 @@ async function runWorkerOnce() {
 setImmediate(runWorkerOnce);
 
 // ---- API routes
+// List subdepartments for the UI dropdown
+app.get('/api/subdepartments', (req, res) => {
+  const rows = querySubdepartments().map(r => ({
+    subdept_no: r.subdept_no,
+    label: `${r.subdept_no} - ${r.subdept_desc}`
+  }));
+  res.json(rows);
+});
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
