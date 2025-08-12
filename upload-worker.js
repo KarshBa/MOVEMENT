@@ -6,7 +6,7 @@ XLSX.set_fs(fs);
 
 // import the helpers you already have:
 import { db, insertManyTxns, upsertSubdepartments, insertUploadMeta } from './db.js';
-import { /* copy or import */ parseUploadedFile, processUploadJob } from './server-upload-helpers.js';
+import { /* copy or import */ parseUploadedFile, processUploadJob } from './upload-lib.js';
 
 // If you kept processUploadJob in server.js, move it (and its tiny helpers) to a new shared module
 // so it can be imported here without pulling in the Express app.
