@@ -529,103 +529,10 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   });
 });
 
-  try {
-  const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
-
-  let processed = 0;
-  const beforeAll = countRows();
-  const sampleDates = new Set();
-  const subPairs = new Set();
-  let batch = [];
-
-  console.log('[upload] rows to process:', parsed.rows.length); // <-- add
-
-  for (const r of parsed.rows) {
-    const date_iso = parseDateToISO(r['Date']);
-    if (!date_iso) continue;
-
-    const row = {
-      date_iso,
-      item_code: pad13(r['Item-Code']),
-      item_brand: (r['Item-Brand'] || '').trim(),
-      item_pos_desc: (r['Item-POS description'] || '').trim(),
-      subdept_no: Number.parseInt(r['Sub-department-Number']) || 0,
-      subdept_desc: (r['Sub-department-Description'] || '').trim(),
-      category_no: Number.parseInt(r['Category-Number']) || 0,
-      category_desc: (r['Category-Description'] || '').trim(),
-      vendor_id: (r['Vendor-ID'] || '').trim(),
-      vendor_name: (r['Vendor-Name'] || '').trim(),
-      units_sum: numberOrZero(r['Units-Sum']),
-      amount_sum: numberOrZero(r['Amount-Sum']),
-      weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
-      bl_profit: numberOrZero(r['Bottom line-Profit']),
-      bl_margin: numberOrZero(r['Bottom line-Margin']),
-      bl_rank: numberOrZero(r['Bottom line-Rank']),
-      bl_ratio: numberOrZero(r['Bottom line-Ratio']),
-      prop_rank: numberOrZero(r['Proportion-Rank']),
-      prop_ratio: numberOrZero(r['Proportion-Ratio']),
-      source_filename: req.file.originalname
-    };
-
-    row.content_hash = sha256(canonicalize(row));
-
-    batch.push(row);
-    processed++;
-    sampleDates.add(date_iso);
-    if (row.subdept_no && row.subdept_desc) {
-      subPairs.add(`${row.subdept_no}::${row.subdept_desc}`);
-    }
-
-    if (batch.length >= BATCH_SIZE) {
-      console.log('[upload] inserting batch of', batch.length);
-        insertManyTxns(batch);   // transaction inside helper
-      batch.length = 0;              // clear without realloc
-    }
-  }
-
-  if (batch.length) {
-      console.log('[upload] inserting final batch of', batch.length); // <-- log last batch
-      insertManyTxns(batch);
-      batch.length = 0;
-    }
-
-  // upsert subdepartments (de-duped)
-  if (subPairs.size) {
-    const pairs = Array.from(subPairs).map(s => {
-      const [no, desc] = s.split('::');
-      return [Number(no), desc];
-    });
-    upsertSubdepartments(pairs);
-  }
-    
-  const afterAll = countRows();
-  const insertedTotal = afterAll - beforeAll;
-  const ignored = processed - insertedTotal;
-
-  // Record upload stats in uploads_meta table
-  try {
-    insertUploadMeta(req.file.originalname, parsed.rows.length, insertedTotal, ignored);
-  } catch (e) {
-    console.warn('insertUploadMeta failed:', e.message);
-  }
-
-  return res.json({
-    fileName: req.file.originalname,
-    rowsParsed: parsed.rows.length,
-    inserted: insertedTotal,
-    ignored,
-    sampleDates: Array.from(sampleDates).sort(),
-    elapsedMs: Date.now() - started
-  });
-    
-} catch (err) {
-  console.error('UPLOAD FAILED during DB insert:', err);
-  const payload = { error: 'Upload failed during insert', message: err.message };
-  if (process.env.NODE_ENV !== 'production' && err.stack) {
-    payload.stack = err.stack.split('\n').slice(0, 10);
-  }
-  return res.status(500).json(payload);
-}
+app.get('/api/upload-status/:id', (req, res) => {
+  const info = uploads.get(req.params.id);
+  if (!info) return res.status(404).json({ error: 'not found' });
+  res.json(info);
 });
 
 app.get('/api/subdepartments', (req, res) => {
@@ -653,12 +560,6 @@ app.get('/api/range', (req, res) => {
     start: vr.start,
     end: vr.end
   };
-
-  app.get('/api/upload-status/:id', (req, res) => {
-  const info = uploads.get(req.params.id);
-  if (!info) return res.status(404).json({ error: 'not found' });
-  res.json(info);
-});
 
   if (req.query.subdept) params.subdept = Number.parseInt(req.query.subdept);
   if (req.query.subdept_start) params.subdept_start = Number.parseInt(req.query.subdept_start);
