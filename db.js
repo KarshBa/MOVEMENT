@@ -74,6 +74,83 @@ export const upsertSubdepartments = db.transaction((pairs) => {
 });
 
 // --- query builders
+// --- Durable upload_jobs table ---
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS upload_jobs (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued','processing','done','error')),
+    result_json TEXT,
+    error TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`).run();
+
+// Internal helper: update updated_at automatically
+function touchJob(id) {
+  db.prepare(`UPDATE upload_jobs SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
+}
+
+// Create a new job in 'queued' state
+export function queueCreateJob(id, filePath, fileName) {
+  db.prepare(`
+    INSERT INTO upload_jobs (id, file_path, file_name, status)
+    VALUES (?, ?, ?, 'queued')
+  `).run(id, filePath, fileName);
+}
+
+// Find the next queued job (FIFO)
+export function queueNextJob() {
+  return db.prepare(`
+    SELECT * FROM upload_jobs
+    WHERE status = 'queued'
+    ORDER BY created_at ASC
+    LIMIT 1
+  `).get();
+}
+
+// Mark a job as 'processing'
+export function queueMarkStarted(id) {
+  db.prepare(`
+    UPDATE upload_jobs
+    SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(id);
+}
+
+// Mark a job as 'done' and store result JSON
+export function queueMarkDone(id, resultObj) {
+  db.prepare(`
+    UPDATE upload_jobs
+    SET status = 'done',
+        result_json = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(JSON.stringify(resultObj), id);
+}
+
+// Mark a job as 'error' and store error message
+export function queueMarkError(id, errMsg) {
+  db.prepare(`
+    UPDATE upload_jobs
+    SET status = 'error',
+        error = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(errMsg, id);
+}
+
+// Fetch one job by ID
+export function queueGetJob(id) {
+  const row = db.prepare(`SELECT * FROM upload_jobs WHERE id = ?`).get(id);
+  if (!row) return null;
+  if (row.result_json) {
+    try { row.result = JSON.parse(row.result_json); } catch { row.result = null; }
+  }
+  return row;
+}
 
 export function querySubdepartments() {
   return db.prepare(`SELECT subdept_no, subdept_desc FROM subdepartments ORDER BY subdept_no ASC`).all();
