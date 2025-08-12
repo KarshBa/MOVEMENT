@@ -37,6 +37,17 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 10);
 const BATCH_SIZE = Number(process.env.BATCH_SIZE || 1000);
 
+// ---- in-memory upload jobs (simple queue)
+const uploads = new Map(); // id -> { status, startedAt, finishedAt, result?, error? }
+const newUploadId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+
+// optional: keep map from growing forever
+function gcUploads(max = 200) {
+  if (uploads.size <= max) return;
+  const keys = Array.from(uploads.keys());
+  for (let i = 0; i < uploads.size - max; i++) uploads.delete(keys[i]);
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 600,
@@ -384,34 +395,139 @@ async function parseXlsb(filePath, originalName) {
   return { rows, missing: [] };
 }
 
+async function processUploadJob(filePath, originalName) {
+  const started = Date.now();
+
+  // 1) parse
+  const parsed = await parseUploadedFile(filePath, originalName);
+  if (parsed.missing?.length) {
+    const err = new Error('Header validation failed: ' + parsed.missing.join(', '));
+    err.code = 'HEADERS';
+    throw err;
+  }
+
+  // 2) insert
+  const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
+
+  let processed = 0;
+  const beforeAll = countRows();
+  const sampleDates = new Set();
+  const subPairs = new Set();
+  let batch = [];
+
+  for (const r of parsed.rows) {
+    const date_iso = parseDateToISO(r['Date']);
+    if (!date_iso) continue;
+
+    const row = {
+      date_iso,
+      item_code: pad13(r['Item-Code']),
+      item_brand: (r['Item-Brand'] || '').trim(),
+      item_pos_desc: (r['Item-POS description'] || '').trim(),
+      subdept_no: Number.parseInt(r['Sub-department-Number']) || 0,
+      subdept_desc: (r['Sub-department-Description'] || '').trim(),
+      category_no: Number.parseInt(r['Category-Number']) || 0,
+      category_desc: (r['Category-Description'] || '').trim(),
+      vendor_id: (r['Vendor-ID'] || '').trim(),
+      vendor_name: (r['Vendor-Name'] || '').trim(),
+      units_sum: numberOrZero(r['Units-Sum']),
+      amount_sum: numberOrZero(r['Amount-Sum']),
+      weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
+      bl_profit: numberOrZero(r['Bottom line-Profit']),
+      bl_margin: numberOrZero(r['Bottom line-Margin']),
+      bl_rank: numberOrZero(r['Bottom line-Rank']),
+      bl_ratio: numberOrZero(r['Bottom line-Ratio']),
+      prop_rank: numberOrZero(r['Proportion-Rank']),
+      prop_ratio: numberOrZero(r['Proportion-Ratio']),
+      source_filename: originalName
+    };
+    row.content_hash = sha256(canonicalize(row));
+
+    batch.push(row);
+    processed++;
+    sampleDates.add(date_iso);
+    if (row.subdept_no && row.subdept_desc) {
+      subPairs.add(`${row.subdept_no}::${row.subdept_desc}`);
+    }
+    if (batch.length >= BATCH_SIZE) {
+      insertManyTxns(batch);
+      batch.length = 0;
+    }
+  }
+  if (batch.length) {
+    insertManyTxns(batch);
+    batch.length = 0;
+  }
+
+  if (subPairs.size) {
+    const pairs = Array.from(subPairs).map(s => {
+      const [no, desc] = s.split('::');
+      return [Number(no), desc];
+    });
+    upsertSubdepartments(pairs);
+  }
+
+  const afterAll = countRows();
+  const insertedTotal = afterAll - beforeAll;
+  const ignored = processed - insertedTotal;
+
+  try {
+    insertUploadMeta(originalName, parsed.rows.length, insertedTotal, ignored);
+  } catch (e) {
+    console.warn('insertUploadMeta failed:', e.message);
+  }
+
+  return {
+    fileName: originalName,
+    rowsParsed: parsed.rows.length,
+    inserted: insertedTotal,
+    ignored,
+    sampleDates: Array.from(sampleDates).sort(),
+    elapsedMs: Date.now() - started
+  };
+}
+
 // ---- API routes
 
 app.post('/api/upload', upload.single('file'), async (req, res) => {
-  const started = Date.now();
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
-  let parsed;
-  try {
-    console.time('parseUploadedFile');                  // <-- add
-    parsed = await parseUploadedFile(req.file.path, req.file.originalname);
-    console.timeEnd('parseUploadedFile');               // <-- add
-  } catch (err) {
-    console.error('UPLOAD FAILED while parsing:', err);
-    const payload = { error: 'Upload failed during parse', message: err.message };
-    if (process.env.NODE_ENV !== 'production' && err.stack) {
-      payload.stack = err.stack.split('\n').slice(0, 10);
-    }
-    return res.status(500).json(payload);
-  } finally {
-    try { fs.unlinkSync(req.file.path); } catch {}
-  }
+  // enqueue + return immediately (avoid Render timeout)
+  const id = newUploadId();
+  uploads.set(id, { status: 'queued', startedAt: Date.now() });
+  gcUploads();
 
-  if (parsed.missing?.length) {
-    return res.status(400).json({
-      error: 'Header validation failed',
-      missingHeaders: parsed.missing
-    });
-  }
+  res.status(202).json({ id, status: 'queued' });
+
+  // background work
+  setImmediate(async () => {
+    const job = uploads.get(id) || { startedAt: Date.now() };
+    try {
+      console.time(`upload:${id}:total`);
+      console.time(`upload:${id}:parse+insert`);
+      const result = await processUploadJob(req.file.path, req.file.originalname);
+      console.timeEnd(`upload:${id}:parse+insert`);
+      uploads.set(id, {
+        status: 'done',
+        startedAt: job.startedAt,
+        finishedAt: Date.now(),
+        result
+      });
+    } catch (err) {
+      uploads.set(id, {
+        status: 'error',
+        startedAt: job.startedAt,
+        finishedAt: Date.now(),
+        error: err.message || String(err)
+      });
+      console.error('Background upload failed:', err);
+    } finally {
+      // always clean up the temp file
+      try { fs.unlinkSync(req.file.path); } catch {}
+      console.timeEnd(`upload:${id}:total`);
+    }
+  });
+});
 
   try {
   const countRows = () => db.prepare('SELECT COUNT(*) AS c FROM raw_transactions').get().c;
@@ -537,6 +653,12 @@ app.get('/api/range', (req, res) => {
     start: vr.start,
     end: vr.end
   };
+
+  app.get('/api/upload-status/:id', (req, res) => {
+  const info = uploads.get(req.params.id);
+  if (!info) return res.status(404).json({ error: 'not found' });
+  res.json(info);
+});
 
   if (req.query.subdept) params.subdept = Number.parseInt(req.query.subdept);
   if (req.query.subdept_start) params.subdept_start = Number.parseInt(req.query.subdept_start);
