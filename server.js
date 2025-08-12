@@ -533,7 +533,6 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 app.get('/api/upload-status/:id', (req, res) => {
   const row = queueGetJob(req.params.id);
   if (!row) return res.status(404).json({ error: 'not found' });
-
   // Shape for the frontend:
   // { status, result? } for done; { status, error? } for error/processing/queued
   let body = { status: row.status, startedAt: row.started_at, finishedAt: row.finished_at };
