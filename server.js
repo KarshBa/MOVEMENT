@@ -15,7 +15,8 @@ import {
   db, insertManyTxns, upsertSubdepartments,
   querySubdepartments, rangeAggregate, upcsAggregate, optimize,
   insertUploadMeta,
-  queueCreateJob, queueMarkStarted, queueMarkDone, queueMarkError, queueGetJob, queueNextJob
+  queueCreateJob, queueMarkStarted, queueMarkDone, queueMarkError, queueGetJob, queueNextJob,
+  searchBrands // <-- add this
 } from './db.js';
 
 process.on('uncaughtException', (err) => {
@@ -524,6 +525,13 @@ app.get('/api/subdepartments', (req, res) => {
   res.json(rows);
 });
 
+// Brand autocomplete
+app.get('/api/brands', (req, res) => {
+  const q = String(req.query.q || '').slice(0, 100); // simple guard
+  const rows = searchBrands(q); // from db.js
+  res.json(rows.map(r => r.brand));
+});
+
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
@@ -580,6 +588,7 @@ app.get('/api/range', (req, res) => {
   if (req.query.subdept) params.subdept = Number.parseInt(req.query.subdept);
   if (req.query.subdept_start) params.subdept_start = Number.parseInt(req.query.subdept_start);
   if (req.query.subdept_end) params.subdept_end = Number.parseInt(req.query.subdept_end);
+  if (req.query.brand) params.brand = String(req.query.brand).trim();
 
   const rows = rangeAggregate(params);
   res.json(rows);
@@ -625,6 +634,7 @@ app.get('/api/export', (req, res) => {
   if (req.query.subdept) params.subdept = Number.parseInt(req.query.subdept);
   if (req.query.subdept_start) params.subdept_start = Number.parseInt(req.query.subdept_start);
   if (req.query.subdept_end) params.subdept_end = Number.parseInt(req.query.subdept_end);
+  if (req.query.brand) params.brand = String(req.query.brand).trim();
 
   const rows = (req.query.upcs && String(req.query.upcs).trim())
     ? upcsAggregate(params, String(req.query.upcs).split(',').map(s => s.trim()).map(pad13))
