@@ -163,7 +163,7 @@ const SYNONYMS = new Map([
   ['category-description',   'Category-Description'],
   ['vendor-id',              'Vendor-ID'],
   ['vendor-name',            'Vendor-Name'],
-  ['transaction-number',     null],
+  ['transaction-number',     'Transaction-Number'],
   ['operator validated',     null],
 ]);
 
@@ -284,6 +284,7 @@ function canonicalize(row) {
     "Category-Description": (row.category_desc || '').trim(),
     "Vendor-ID": (row.vendor_id || '').trim(),
     "Vendor-Name": (row.vendor_name || '').trim(),
+    "Transaction-Number": (row.txn_no || '').trim(),
     "Units-Sum": row.units_sum.toFixed(6),
     "Amount-Sum": row.amount_sum.toFixed(6),
     "Weight/Volume-Sum": row.weight_volume_sum.toFixed(6),
@@ -415,6 +416,7 @@ async function processUploadJob(filePath, originalName) {
       category_desc: (r['Category-Description'] || '').trim(),
       vendor_id: (r['Vendor-ID'] || '').trim(),
       vendor_name: (r['Vendor-Name'] || '').trim(),
+      txn_no: String(r['Transaction-Number'] || '').trim(),
       units_sum: numberOrZero(r['Units-Sum']),
       amount_sum: numberOrZero(r['Amount-Sum']),
       weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
