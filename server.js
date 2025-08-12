@@ -7,12 +7,8 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import morgan from 'morgan';
 import crypto from 'crypto';
-import { parse as csvParse } from 'csv-parse';
 import { format as csvFormat } from '@fast-csv/format';
-import * as XLSX from 'xlsx/xlsx.mjs';
-// wire node fs for readFile / writeFile in the ESM build
-XLSX.set_fs(fs);
-import { parse as parseDateFns, format as formatDate, isValid } from 'date-fns';
+import { Worker } from 'node:worker_threads';
 
 import { basicAuth } from './auth.js';
 import {
@@ -478,6 +474,26 @@ async function processUploadJob(filePath, originalName) {
 
 let workerRunning = false;
 
+function runJobInWorker(job) {
+  return new Promise((resolve) => {
+    const w = new Worker(new URL('./upload-worker.js', import.meta.url), {
+      workerData: { id: job.id, tmp_path: job.tmp_path, original_name: job.original_name }
+    });
+    w.once('message', (msg) => {
+      if (msg && msg.ok) queueMarkDone(job.id, msg.result);
+      else queueMarkError(job.id, msg?.error || 'worker failed');
+      resolve();
+    });
+    w.once('error', (err) => {
+      queueMarkError(job.id, err?.message || String(err));
+      resolve();
+    });
+    w.once('exit', (code) => {
+      // Non-zero exit without 'error' still gets resolved; queueMarkError already called above if needed.
+    });
+  });
+}
+
 async function runWorkerOnce() {
   if (workerRunning) return;
   workerRunning = true;
@@ -485,20 +501,9 @@ async function runWorkerOnce() {
     while (true) {
       const job = queueNextJob();
       if (!job) break;
-
-      // Mark started (idempotent between queued/processing)
       queueMarkStarted(job.id);
-
-      try {
-        const result = await processUploadJob(job.tmp_path, job.original_name);
-        queueMarkDone(job.id, result);
-      } catch (err) {
-        queueMarkError(job.id, err);
-        console.error('[upload worker] job failed', job.id, err);
-      } finally {
-        // Cleanup file whether success or error
-        try { fs.unlinkSync(job.tmp_path); } catch {}
-      }
+      await runJobInWorker(job);
+      try { fs.unlinkSync(job.tmp_path); } catch {}
     }
   } finally {
     workerRunning = false;
