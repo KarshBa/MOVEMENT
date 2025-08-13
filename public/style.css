@@ -73,3 +73,7 @@ th.sortable { cursor: pointer; }
 th.sortable[data-sort="asc"]::after  { content: " ▲"; }
 th.sortable[data-sort="desc"]::after { content: " ▼"; }
 #results { table-layout: fixed; }
+/* Force brand suggestion dropdown to have white background */
+#brandList.suggest-list {
+  background: #fff !important;
+}
