@@ -25,6 +25,7 @@ const errorBox   = document.getElementById('errorBox') || document.getElementByI
 let currentRows = [];
 let sortKey = 'Amount-Sum';  // default sort when new data arrives
 let sortDir = 'desc';        // 'asc' | 'desc'
+let headersWired = false;    // ensure we only wire once
 
 function showError(msg) {
   errorBox.textContent = msg;
@@ -133,6 +134,8 @@ function renderRows(rows) {
   // store and draw (sorted)
   currentRows = Array.isArray(rows) ? rows.slice() : [];
   drawRows();
+  // In case the module evaluated before the thead existed/parsed:
+  if (!headersWired) initHeaderSorting();
 }
 
 function drawRows() {
@@ -259,22 +262,34 @@ function sortRows(rows, key, dir) {
 }
 
 function initHeaderSorting() {
-  const ths = table ? table.querySelectorAll('thead th.sortable') : [];
+  if (!table) return;
+  const ths = table.querySelectorAll('thead th.sortable');
+  if (!ths.length) return; // nothing to wire yet
+
   ths.forEach(th => {
-    th.addEventListener('click', () => {
+    th.style.cursor = 'pointer';
+    th.tabIndex = 0;
+    th.setAttribute('role', 'button');
+    const handle = () => {
       const key = th.getAttribute('data-key');
       if (!key) return;
       if (sortKey === key) {
-        // toggle direction
-        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        sortDir = (sortDir === 'asc') ? 'desc' : 'asc';
       } else {
         sortKey = key;
-        // sensible default: numeric columns start desc, others asc
         sortDir = NUMERIC_COLS.has(key) ? 'desc' : 'asc';
       }
       drawRows();
+    };
+    th.addEventListener('click', handle);
+    th.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handle();
+      }
     });
   });
+  headersWired = true;
   updateSortHeaders();
 }
 
@@ -286,8 +301,10 @@ function updateSortHeaders() {
   });
 }
 
-// wire up header sorting once
-initHeaderSorting();
+// wire up header sorting when DOM is fully parsed
+document.addEventListener('DOMContentLoaded', () => {
+  if (!headersWired) initHeaderSorting();
+});
 
 (function initDefaults(){
   // show/hide advanced wrapper on load
