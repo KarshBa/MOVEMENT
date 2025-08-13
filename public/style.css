@@ -72,3 +72,4 @@ th{background:#f1f3f4;}
 th.sortable { cursor: pointer; }
 th.sortable[data-sort="asc"]::after  { content: " ▲"; }
 th.sortable[data-sort="desc"]::after { content: " ▼"; }
+#results { table-layout: fixed; }
