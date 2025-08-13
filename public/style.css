@@ -34,40 +34,39 @@ table{
 }
 th,td{padding:.6rem;border:1px solid #e0e0e0;font-size:.95rem;text-align:left;}
 th{background:#f1f3f4;}
+
+#results { table-layout: fixed; }
+
 @media (max-width: 600px) {
+  /* enable horizontal scroll on phones */
   .table-scroll {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  /* Keep the table as a real table; make it wider so each cell can stay one line */
+
+  /* let columns size naturally and be wider than the screen */
   #results {
-    display: table;
-    table-layout: auto;     /* let columns size naturally */
-    min-width: 1000px;      /* adjust as you like */
+    table-layout: auto;   /* override the global fixed */
+    min-width: 1200px;    /* adjust to your content */
   }
-  #results thead {
-    display: table-header-group;  /* keep headers visible */
-  }
-  #results tbody {
-    display: table-row-group;
-  }
-  #results tr {
-    display: table-row;
-  }
+
+  /* keep each cell on one line so text never wraps onto the next cell */
   #results th,
   #results td {
-    display: table-cell;
-    white-space: nowrap;   /* single line per cell */
-    max-width: none;       /* no clipping */
-    overflow: visible;     /* ensure it doesn’t hide text */
-    text-overflow: clip;   /* explicit: no ellipsis */
-    padding-left: .6rem;   /* reset left padding from old card style */
+    white-space: nowrap;
   }
-  /* kill the old label pseudo element if any HTML still has data-label */
-  #results td::before {
-    content: none !important;
+
+  /* UNDO the card styles from the old mobile layout */
+  table, thead, tbody, th, td, tr { 
+    display: table; 
+    width: auto; 
   }
+  thead { display: table-header-group; }
+  tr { margin-bottom: 0; box-shadow: none; }
+  td { border: 1px solid #e0e0e0; padding-left: .6rem; }
+  td::before { content: none; }
 }
+
 .page-info{
   margin:0.25rem 0 0.5rem;   /* small gap above the table */
   font-weight:600;
@@ -99,7 +98,6 @@ th{background:#f1f3f4;}
 th.sortable { cursor: pointer; }
 th.sortable[data-sort="asc"]::after  { content: " ▲"; }
 th.sortable[data-sort="desc"]::after { content: " ▼"; }
-#results { table-layout: fixed; }
 /* Force brand suggestion dropdown to have white background */
 #brandList.suggest-list {
   background: #fff !important;
