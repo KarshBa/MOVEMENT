@@ -166,7 +166,9 @@ function fmt(n) {
 }
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c] || c));
+  return String(s).replace(/[&<>"]/g, c => (
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c] || c)
+  ));
 }
 
 async function loadSubdepartments() {
@@ -257,7 +259,7 @@ function sortRows(rows, key, dir) {
 }
 
 function initHeaderSorting() {
-  const ths = document.querySelectorAll('#results thead th.sortable');
+  const ths = table ? table.querySelectorAll('thead th.sortable') : [];
   ths.forEach(th => {
     th.addEventListener('click', () => {
       const key = th.getAttribute('data-key');
@@ -277,7 +279,7 @@ function initHeaderSorting() {
 }
 
 function updateSortHeaders() {
-  const ths = document.querySelectorAll('#results thead th.sortable');
+  const ths = table ? table.querySelectorAll('thead th.sortable') : [];
   ths.forEach(th => {
     const key = th.getAttribute('data-key');
     th.setAttribute('data-sort', key === sortKey ? sortDir : '');
