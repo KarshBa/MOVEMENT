@@ -83,10 +83,10 @@ function normalizeUpc(s) {
 
 function collectUpcs() {
   const raw = String(upcTextarea?.value || '');
-  // split on any non-digit, drop empties, then pad & dedupe
-  const parts = raw.split(/[^0-9]+/).map(s => s.trim()).filter(s => s.length > 0);
-  return Array.from(new Set(parts.map(pad13)));
- }
+  // split on any non-digit, keep digit strings as-is; server will expand
+  const parts = raw.split(/[^0-9]+/).map(s => s.trim()).filter(Boolean);
+  return Array.from(new Set(parts));
+}
 
 // Safer numeric parser: handles "1,234.56", blanks, etc.
 function parseNumCell(v) {
@@ -266,6 +266,7 @@ async function runSearchUpcs() {
   try {
     const params = currentFilters();
     const upcs = collectUpcs();
+    console.debug('[runSearchUpcs] upcs=', upcs);
     const body = { ...params, upcs };
     const rows = await postJSON('/api/search-upcs', body);
     renderRows(rows);
@@ -305,10 +306,12 @@ function doExport() {
 }
 
 // --- Dynamic label for Run button based on UPCs entered ---
-btnRun.textContent = collectUpcs().length ? 'Search UPCs' : 'Submit';
-upcTextarea.addEventListener('input', () => {
-btnRun.textContent = collectUpcs().length ? 'Search UPCs' : 'Submit';
-});
+if (btnRun && upcTextarea) {
+  const setRunLabel = () =>
+    (btnRun.textContent = collectUpcs().length ? 'Search UPCs' : 'Submit');
+  setRunLabel();
+  upcTextarea.addEventListener('input', setRunLabel);
+}
 
 // wire events
 btnRun?.addEventListener('click', runQuery);
