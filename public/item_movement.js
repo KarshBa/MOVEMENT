@@ -22,6 +22,7 @@ const table      = document.getElementById('resultTable') || document.getElement
 const errorBox   = document.getElementById('errorBox') || document.getElementById('info');
 const sumUnitsEl  = document.getElementById('sumUnits');
 const sumAmountEl = document.getElementById('sumAmount');
+const dbEndsEl    = document.getElementById('dbEnds');
 // Fast number formatting (avoid new Intl.NumberFormat per cell)
 const NF_INT  = new Intl.NumberFormat();
 const NF_MNY  = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -54,6 +55,22 @@ async function postJSON(url, body) {
     throw new Error(t);
   }
   return r.json();
+}
+
+async function loadDbEnds() {
+  if (!dbEndsEl) return;
+  try {
+    const summary = await getJSON('/api/admin/summary');
+    const maxDate = summary?.maxDate || '';
+    dbEndsEl.textContent = maxDate || '—';
+    // Optional: cap date inputs so users can’t pick a future DB date
+    if (maxDate) {
+      startInput?.setAttribute('max', maxDate);
+      endInput?.setAttribute('max', maxDate);
+    }
+  } catch {
+    dbEndsEl.textContent = '—';
+  }
 }
 
 function normalizeUpc(s) {
@@ -271,6 +288,7 @@ btnSearch?.addEventListener('click', runSearchUpcs);
 
 // initial load
 loadSubdepartments();
+loadDbEnds();
 
 
 // --- sorting helpers
