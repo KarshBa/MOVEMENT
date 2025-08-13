@@ -2,18 +2,24 @@
 const startInput = document.getElementById('start');
 const endInput   = document.getElementById('end');
 
-const selSingle  = document.getElementById('subdept');        // single subdept select (if present)
-const selStart   = document.getElementById('subdept_start');  // range start (if present)
-const selEnd     = document.getElementById('subdept_end');    // range end (if present)
+const selSingle  = document.getElementById('subdept'); // single subdept select
+// NOTE: your HTML uses subStart/subEnd (not subdept_start/subdept_end)
+const selStart   = document.getElementById('subStart');
+const selEnd     = document.getElementById('subEnd');
+const toggleAdvanced = document.getElementById('toggleAdvanced');
+const advWrap    = document.getElementById('advWrap');
 
-const btnRun     = document.getElementById('btnRun')    || document.getElementById('btnSubmit');
+const btnRun     = document.getElementById('btnRun') || document.getElementById('btnSubmit');
 const btnExport  = document.getElementById('btnExport');
 const btnSearch  = document.getElementById('btnSearchUpcs');
 
-const upcTextarea = document.getElementById('upcs');          // optional, for UPC search
+const brandInput = document.getElementById('brand');
+const brandList  = document.getElementById('brandList');
+
+const upcTextarea = document.getElementById('upcs');
 const tbody      = document.getElementById('tbody');
 const table      = document.getElementById('resultTable') || document.getElementById('results');
-const errorBox   = document.getElementById('errorBox')    || document.getElementById('info');
+const errorBox   = document.getElementById('errorBox') || document.getElementById('info');
 
 function showError(msg) {
   errorBox.textContent = msg;
@@ -39,18 +45,84 @@ async function postJSON(url, body) {
   return r.json();
 }
 
+function pad13(s) {
+  const digits = String(s ?? '').replace(/\D+/g, '');
+  return digits.padStart(13, '0');
+}
+
+function collectUpcs() {
+  const raw = String(upcTextarea?.value || '');
+  const parts = raw.split(/[^0-9]+/);     // split on any non-digit
+  // pad & dedupe
+  return Array.from(new Set(parts.map(pad13).filter(Boolean)));
+}
+
 function currentFilters() {
   const params = {
     start: startInput.value.trim(),
     end: endInput.value.trim()
   };
   if (selSingle && selSingle.value) params.subdept = Number(selSingle.value);
-  if (selStart && selEnd && selStart.value && selEnd.value) {
+
+  // Only include range if Advanced is toggled on and both values present
+  if (toggleAdvanced?.checked && selStart?.value && selEnd?.value) {
     params.subdept_start = Number(selStart.value);
     params.subdept_end = Number(selEnd.value);
   }
+
+  const brand = brandInput?.value?.trim();
+  if (brand) params.brand = brand;
+
   return params;
 }
+
+let brandDebounce = null;
+
+function hideBrandList() {
+  if (brandList) {
+    brandList.style.display = 'none';
+    brandList.innerHTML = '';
+  }
+}
+
+toggleAdvanced?.addEventListener('change', () => {
+  if (advWrap) advWrap.style.display = toggleAdvanced.checked ? '' : 'none';
+});
+
+brandInput?.addEventListener('input', () => {
+  const q = brandInput.value.trim();
+  if (brandDebounce) clearTimeout(brandDebounce);
+
+  brandDebounce = setTimeout(async () => {
+    if (!q) return hideBrandList();
+    try {
+      const r = await fetch(`/api/brands?q=${encodeURIComponent(q)}`, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('brands fetch failed');
+      const brands = await r.json(); // array of strings
+      if (!brands.length) return hideBrandList();
+
+      brandList.innerHTML = brands.map(b => `<li data-v="${escapeHtml(b)}">${escapeHtml(b)}</li>`).join('');
+      brandList.style.display = '';
+    } catch {
+      hideBrandList();
+    }
+  }, 200);
+});
+
+brandList?.addEventListener('click', (e) => {
+  const li = e.target.closest('li[data-v]');
+  if (!li) return;
+  brandInput.value = li.getAttribute('data-v') || '';
+  hideBrandList();
+  // optional: auto-run with the chosen brand
+  runRange();
+});
+
+document.addEventListener('click', (e) => {
+  if (brandList && !brandList.contains(e.target) && e.target !== brandInput) {
+    hideBrandList();
+  }
+});
 
 function renderRows(rows) {
   tbody.innerHTML = '';
@@ -121,8 +193,7 @@ async function runSearchUpcs() {
   showError('');
   try {
     const params = currentFilters();
-    const upcs = (upcTextarea?.value || '')
-      .split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+    const upcs = collectUpcs();
     const body = { ...params, upcs };
     const rows = await postJSON('/api/search-upcs', body);
     renderRows(rows);
@@ -133,8 +204,10 @@ async function runSearchUpcs() {
 
 function doExport() {
   const params = currentFilters();
-  const qs = new URLSearchParams(params).toString();
-  location.href = `/api/export?${qs}`;
+  const upcs = collectUpcs();
+  const p = new URLSearchParams(params);
+  if (upcs.length) p.set('upcs', upcs.join(','));
+  location.href = `/api/export?${p.toString()}`;
 }
 
 // wire events
@@ -144,3 +217,22 @@ btnSearch?.addEventListener('click', runSearchUpcs);
 
 // initial load
 loadSubdepartments();
+
+(function initDefaults(){
+  // show/hide advanced wrapper on load
+  if (advWrap) advWrap.style.display = toggleAdvanced?.checked ? '' : 'none';
+
+  // set default dates if empty (last 30 days)
+  if (!startInput.value || !endInput.value) {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth()+1).padStart(2,'0');
+    const dd = String(today.getDate()).padStart(2,'0');
+    endInput.value = `${yyyy}-${mm}-${dd}`;
+    const d2 = new Date(today); d2.setDate(today.getDate()-30);
+    const yyyy2 = d2.getFullYear();
+    const mm2 = String(d2.getMonth()+1).padStart(2,'0');
+    const dd2 = String(d2.getDate()).padStart(2,'0');
+    startInput.value = `${yyyy2}-${mm2}-${dd2}`;
+  }
+})();
