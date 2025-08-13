@@ -21,6 +21,11 @@ const tbody      = document.getElementById('tbody');
 const table      = document.getElementById('resultTable') || document.getElementById('results');
 const errorBox   = document.getElementById('errorBox') || document.getElementById('info');
 
+// --- sorting state
+let currentRows = [];
+let sortKey = 'Amount-Sum';  // default sort when new data arrives
+let sortDir = 'desc';        // 'asc' | 'desc'
+
 function showError(msg) {
   errorBox.textContent = msg;
   errorBox.style.display = msg ? '' : 'none';
@@ -125,6 +130,13 @@ document.addEventListener('click', (e) => {
 });
 
 function renderRows(rows) {
+  // store and draw (sorted)
+  currentRows = Array.isArray(rows) ? rows.slice() : [];
+  drawRows();
+}
+
+function drawRows() {
+  const rows = sortRows(currentRows, sortKey, sortDir);
   tbody.innerHTML = '';
   for (const r of rows) {
     const tr = document.createElement('tr');
@@ -144,6 +156,7 @@ function renderRows(rows) {
     tbody.appendChild(tr);
   }
   table.style.display = rows.length ? '' : 'none';
+  updateSortHeaders();
 }
 
 function fmt(n) {
@@ -217,6 +230,62 @@ btnSearch?.addEventListener('click', runSearchUpcs);
 
 // initial load
 loadSubdepartments();
+
+
+// --- sorting helpers
+const NUMERIC_COLS = new Set([
+  'Units-Sum','Amount-Sum','Sub-department-Number','Category-Number'
+  // Note: "Item-Code" is 13-digit, already left-padded; lexicographic works fine
+]);
+
+function sortRows(rows, key, dir) {
+  if (!key) return rows;
+  const mult = dir === 'asc' ? 1 : -1;
+  const numeric = NUMERIC_COLS.has(key);
+  return rows.slice().sort((a, b) => {
+    let va = a?.[key], vb = b?.[key];
+    if (numeric) {
+      va = Number(va); if (!Number.isFinite(va)) va = 0;
+      vb = Number(vb); if (!Number.isFinite(vb)) vb = 0;
+      return mult * (va - vb);
+    } else {
+      va = String(va ?? '').toLocaleLowerCase();
+      vb = String(vb ?? '').toLocaleLowerCase();
+      return mult * va.localeCompare(vb, undefined, { numeric: true });
+    }
+  });
+}
+
+function initHeaderSorting() {
+  const ths = document.querySelectorAll('#results thead th.sortable');
+  ths.forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.getAttribute('data-key');
+      if (!key) return;
+      if (sortKey === key) {
+        // toggle direction
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortKey = key;
+        // sensible default: numeric columns start desc, others asc
+        sortDir = NUMERIC_COLS.has(key) ? 'desc' : 'asc';
+      }
+      drawRows();
+    });
+  });
+  updateSortHeaders();
+}
+
+function updateSortHeaders() {
+  const ths = document.querySelectorAll('#results thead th.sortable');
+  ths.forEach(th => {
+    const key = th.getAttribute('data-key');
+    th.setAttribute('data-sort', key === sortKey ? sortDir : '');
+  });
+}
+
+// wire up header sorting once
+initHeaderSorting();
 
 (function initDefaults(){
   // show/hide advanced wrapper on load
