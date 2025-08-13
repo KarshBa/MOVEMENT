@@ -22,6 +22,9 @@ const table      = document.getElementById('resultTable') || document.getElement
 const errorBox   = document.getElementById('errorBox') || document.getElementById('info');
 const sumUnitsEl  = document.getElementById('sumUnits');
 const sumAmountEl = document.getElementById('sumAmount');
+// Fast number formatting (avoid new Intl.NumberFormat per cell)
+const NF_INT  = new Intl.NumberFormat();
+const NF_MNY  = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // --- sorting state
 let currentRows = [];
@@ -65,15 +68,21 @@ function collectUpcs() {
   return Array.from(new Set(parts.map(pad13).filter(Boolean)));
 }
 
-function updateTotals(rows) {
-  if (!Array.isArray(rows)) rows = [];
-  const unitsTotal = rows.reduce((acc, r) => acc + (Number(r["Units-Sum"])  || 0), 0);
-  const amtTotal   = rows.reduce((acc, r) => acc + (Number(r["Amount-Sum"]) || 0), 0);
+// Safer numeric parser: handles "1,234.56", blanks, etc.
+function parseNumCell(v) {
+  if (typeof v === 'number') return v;
+  const s = String(v ?? '').replace(/,/g, '').trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
 
-  if (sumUnitsEl)  sumUnitsEl.textContent  = unitsTotal.toLocaleString();
-  if (sumAmountEl) sumAmountEl.textContent = amtTotal.toLocaleString(undefined, {
-    minimumFractionDigits: 2, maximumFractionDigits: 2
-  });
+function updateTotals(rows = currentRows) {
+  if (!Array.isArray(rows)) rows = [];
+  const unitsTotal = rows.reduce((acc, r) => acc + parseNumCell(r["Units-Sum"]), 0);
+  const amtTotal   = rows.reduce((acc, r) => acc + parseNumCell(r["Amount-Sum"]), 0);
+
+  if (sumUnitsEl)  sumUnitsEl.textContent  = NF_INT.format(unitsTotal);
+  if (sumAmountEl) sumAmountEl.textContent = NF_MNY.format(amtTotal);
 }
 
 function currentFilters() {
@@ -146,40 +155,51 @@ document.addEventListener('click', (e) => {
 function renderRows(rows) {
   // store and draw (sorted)
   currentRows = Array.isArray(rows) ? rows.slice() : [];
+  updateTotals(currentRows);     // <-- ADD THIS LINE
   drawRows();
-  // In case the module evaluated before the thead existed/parsed:
   if (!headersWired) initHeaderSorting();
 }
 
 function drawRows() {
   const rows = sortRows(currentRows, sortKey, sortDir);
-  tbody.innerHTML = '';
-  for (const r of rows) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td data-label="UPC">${escapeHtml(r["Item-Code"] ?? '')}</td>
-      <td data-label="Brand">${escapeHtml(r["Item-Brand"] ?? '')}</td>
-      <td data-label="POS Desc">${escapeHtml(r["Item-POS description"] ?? '')}</td>
-      <td data-label="Subdept #">${escapeHtml(r["Sub-department-Number"] ?? '')}</td>
-      <td data-label="Subdept">${escapeHtml(r["Sub-department-Description"] ?? '')}</td>
-      <td data-label="Category #">${escapeHtml(r["Category-Number"] ?? '')}</td>
-      <td data-label="Category">${escapeHtml(r["Category-Description"] ?? '')}</td>
-      <td data-label="Vendor ID">${escapeHtml(r["Vendor-ID"] ?? '')}</td>
-      <td data-label="Vendor">${escapeHtml(r["Vendor-Name"] ?? '')}</td>
-      <td data-label="Units Sum">${fmt(r["Units-Sum"])}</td>
-      <td data-label="Amount Sum">${fmt(r["Amount-Sum"])}</td>
-    `;
-    tbody.appendChild(tr);
+
+  // Freeze layout while we replace the body
+  const t0 = performance.now();
+  tbody.style.display = 'none';
+
+  // Build HTML once — MUCH faster than appendChild in a loop
+  let html = '';
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    html +=
+      `<tr>
+        <td data-label="UPC">${escapeHtml(r["Item-Code"] ?? '')}</td>
+        <td data-label="Brand">${escapeHtml(r["Item-Brand"] ?? '')}</td>
+        <td data-label="POS Desc">${escapeHtml(r["Item-POS description"] ?? '')}</td>
+        <td data-label="Subdept #">${escapeHtml(r["Sub-department-Number"] ?? '')}</td>
+        <td data-label="Subdept">${escapeHtml(r["Sub-department-Description"] ?? '')}</td>
+        <td data-label="Category #">${escapeHtml(r["Category-Number"] ?? '')}</td>
+        <td data-label="Category">${escapeHtml(r["Category-Description"] ?? '')}</td>
+        <td data-label="Vendor ID">${escapeHtml(r["Vendor-ID"] ?? '')}</td>
+        <td data-label="Vendor">${escapeHtml(r["Vendor-Name"] ?? '')}</td>
+        <td data-label="Units Sum">${fmt(r["Units-Sum"])}</td>
+        <td data-label="Amount Sum">${fmt(r["Amount-Sum"])}</td>
+      </tr>`;
   }
+  tbody.innerHTML = html;
+  tbody.style.display = '';
   table.style.display = rows.length ? '' : 'none';
+
   updateSortHeaders();
-  updateTotals(rows);   // <-- add this
+
+  // Optional quick timing to confirm improvement:
+  console.log('[render ms]', Math.round(performance.now() - t0), 'rows', rows.length);
 }
 
 function fmt(n) {
   if (n == null) return '';
   const num = Number(n);
-  return Number.isFinite(num) ? num.toLocaleString() : String(n);
+  return Number.isFinite(num) ? NF_INT.format(num) : String(n);
 }
 
 function escapeHtml(s) {
@@ -275,16 +295,17 @@ function sortRows(rows, key, dir) {
   });
 }
 
+let sortingInProgress = false;
+
 function initHeaderSorting() {
-  const thead = table?.tHead;
-  if (!thead) {
-    console.warn('No table header found for sorting');
-    return;
-  }
+  if (!table) return;
+  const thead = table.querySelector('thead');
+  if (!thead) return;
 
   thead.addEventListener('click', (e) => {
     const th = e.target.closest('th.sortable');
     if (!th || !thead.contains(th)) return;
+    if (sortingInProgress) return;
 
     const key = th.getAttribute('data-key');
     if (!key) return;
@@ -295,9 +316,28 @@ function initHeaderSorting() {
       sortKey = key;
       sortDir = NUMERIC_COLS.has(key) ? 'desc' : 'asc';
     }
-    drawRows();
+
+    sortingInProgress = true;
+    // Disable pointer events momentarily so a second click can’t stack
+    thead.style.pointerEvents = 'none';
+
+    requestAnimationFrame(() => {
+      drawRows();
+      // totals don’t change with order, but keeping this is harmless
+      // updateTotals();
+
+      sortingInProgress = false;
+      thead.style.pointerEvents = '';
+    });
   });
 
+  thead.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const th = e.target.closest('th.sortable');
+    if (th) th.click();
+  });
+
+  thead.querySelectorAll('th.sortable').forEach(th => th.tabIndex = 0);
   updateSortHeaders();
 }
 
