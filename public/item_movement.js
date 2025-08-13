@@ -56,16 +56,18 @@ async function postJSON(url, body) {
   return r.json();
 }
 
-function pad13(s) {
+function normalizeUpc(s) {
   const digits = String(s ?? '').replace(/\D+/g, '');
-  return digits.padStart(13, '0');
+  if (!digits) return '';
+  // If your DB stores 12-digit UPCs, keep 12 as-is.
+  // Otherwise pad to 13 (your server uses pad13 when inserting).
+  return digits.length === 12 ? digits : digits.padStart(13, '0');
 }
 
 function collectUpcs() {
   const raw = String(upcTextarea?.value || '');
-  const parts = raw.split(/[^0-9]+/);     // split on any non-digit
-  // pad & dedupe
-  return Array.from(new Set(parts.map(pad13).filter(Boolean)));
+  const parts = raw.split(/[^0-9]+/); // split on any non-digit
+  return Array.from(new Set(parts.map(normalizeUpc).filter(Boolean)));
 }
 
 // Safer numeric parser: handles "1,234.56", blanks, etc.
@@ -302,6 +304,7 @@ function initHeaderSorting() {
   const thead = table.querySelector('thead');
   if (!thead) return;
 
+  headersWired = true; // <— make sure we only wire once
   thead.addEventListener('click', (e) => {
     const th = e.target.closest('th.sortable');
     if (!th || !thead.contains(th)) return;
@@ -349,10 +352,12 @@ function updateSortHeaders() {
   });
 }
 
-// wire up header sorting when DOM is fully parsed
-document.addEventListener('DOMContentLoaded', () => {
-  if (!headersWired) initHeaderSorting();
-});
+ // wire up header sorting when DOM is fully parsed
+ document.addEventListener('DOMContentLoaded', () => {
+  // ensure brand list has the right class for white background styles
+  brandList?.classList.add('suggest-list');
+   if (!headersWired) initHeaderSorting();
+ });
 
 (function initDefaults(){
   // show/hide advanced wrapper on load
