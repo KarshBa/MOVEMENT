@@ -37,6 +37,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS ix_raw_brand ON raw_transactions(item_brand COLLATE NOCASE);
 `);
 
+db.exec(`
+  CREATE INDEX IF NOT EXISTS ix_raw_date ON raw_transactions(date_iso);
+  CREATE INDEX IF NOT EXISTS ix_raw_itemcode ON raw_transactions(item_code);
+  CREATE INDEX IF NOT EXISTS ix_raw_date_item ON raw_transactions(date_iso, item_code);
+`);
+
 console.log('[DB]', 'DATA_DIR=', DATA_DIR, 'DB_FILE=', DB_FILE);
 
 // --- prepared statements
@@ -107,25 +113,9 @@ export function searchBrands(q) {
 
 function buildWhereForBrand(params, where) {
   if (params.brand) {
-    where.push(`item_brand LIKE @brand COLLATE NOCASE`);
+    where.push(`item_brand LIKE @brand ESCAPE '\\' COLLATE NOCASE`);
     params.brand = `%${params.brand.replace(/[%_]/g, s => '\\' + s)}%`;
   }
-}
-
-  // Dynamic placeholders for IN (...)
-  const placeholders = upcList.map((_, i) => `@upc${i}`).join(',');
-  const bindings = {};
-  upcList.forEach((v, i) => { bindings[`upc${i}`] = v; });
-
-  const sql = [
-    base,
-    `AND item_code IN (${placeholders})`,
-    where.length ? 'AND ' + where.join(' AND ') : '',
-    `GROUP BY item_code`,
-    `ORDER BY "Amount-Sum" DESC`
-  ].join('\n');
-
-  return db.prepare(sql).all({ ...params, ...bindings });
 }
 
 export function optimize() {
