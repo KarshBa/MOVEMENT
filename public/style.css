@@ -37,34 +37,51 @@ th{background:#f1f3f4;}
 
 #results { table-layout: fixed; }
 
-@media (max-width: 600px) {
-  /* enable horizontal scroll on phones */
+/* ===== Compact table for small screens (landscape favored) ===== */
+@media (max-width: 900px) and (orientation: landscape) {
+  /* keep horizontal scroll available */
   .table-scroll {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
 
-  /* let columns size naturally and be wider than the screen */
+  /* let columns size naturally; keep a reasonable minimum width */
   #results {
-    table-layout: auto;   /* override the global fixed */
-    min-width: 1200px;    /* adjust to your content */
+    table-layout: auto;      /* override the global fixed on small screens */
+    min-width: 1000px;       /* adjust if you want more/less density */
+    font-size: clamp(11px, 1.4vw, 13px);         /* shrink table text */
   }
 
-  /* keep each cell on one line so text never wraps onto the next cell */
+  #results th,
+  #results td {
+    white-space: nowrap;     /* never wrap into next line */
+    padding: .35rem .45rem;  /* tighter cells */
+  }
+
+  /* optional: slimmer header styling */
+  #results th {
+    font-weight: 600;
+  }
+}
+
+/* Fallback compact mode for any small screen (portrait or landscape) */
+@media (max-width: 600px) {
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #results {
+    table-layout: auto;      /* override the global fixed */
+    min-width: 900px;        /* slightly smaller minimum for very small phones */
+    font-size: clamp(11px, 1.4vw, 13px);
+  }
+
   #results th,
   #results td {
     white-space: nowrap;
+    padding: .3rem .4rem;
   }
-
-  /* UNDO the card styles from the old mobile layout */
-  table, thead, tbody, th, td, tr { 
-    display: table; 
-    width: auto; 
-  }
-  thead { display: table-header-group; }
-  tr { margin-bottom: 0; box-shadow: none; }
-  td { border: 1px solid #e0e0e0; padding-left: .6rem; }
-  td::before { content: none; }
 }
 
 .page-info{
