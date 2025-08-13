@@ -20,6 +20,8 @@ const upcTextarea = document.getElementById('upcs');
 const tbody      = document.getElementById('tbody');
 const table      = document.getElementById('resultTable') || document.getElementById('results');
 const errorBox   = document.getElementById('errorBox') || document.getElementById('info');
+const sumUnitsEl  = document.getElementById('sumUnits');
+const sumAmountEl = document.getElementById('sumAmount');
 
 // --- sorting state
 let currentRows = [];
@@ -61,6 +63,17 @@ function collectUpcs() {
   const parts = raw.split(/[^0-9]+/);     // split on any non-digit
   // pad & dedupe
   return Array.from(new Set(parts.map(pad13).filter(Boolean)));
+}
+
+function updateTotals(rows) {
+  if (!Array.isArray(rows)) rows = [];
+  const unitsTotal = rows.reduce((acc, r) => acc + (Number(r["Units-Sum"])  || 0), 0);
+  const amtTotal   = rows.reduce((acc, r) => acc + (Number(r["Amount-Sum"]) || 0), 0);
+
+  if (sumUnitsEl)  sumUnitsEl.textContent  = unitsTotal.toLocaleString();
+  if (sumAmountEl) sumAmountEl.textContent = amtTotal.toLocaleString(undefined, {
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+  });
 }
 
 function currentFilters() {
@@ -160,6 +173,7 @@ function drawRows() {
   }
   table.style.display = rows.length ? '' : 'none';
   updateSortHeaders();
+  updateTotals(rows);   // <-- add this
 }
 
 function fmt(n) {
@@ -262,34 +276,28 @@ function sortRows(rows, key, dir) {
 }
 
 function initHeaderSorting() {
-  if (!table) return;
-  const ths = table.querySelectorAll('thead th.sortable');
-  if (!ths.length) return; // nothing to wire yet
+  const thead = table?.tHead;
+  if (!thead) {
+    console.warn('No table header found for sorting');
+    return;
+  }
 
-  ths.forEach(th => {
-    th.style.cursor = 'pointer';
-    th.tabIndex = 0;
-    th.setAttribute('role', 'button');
-    const handle = () => {
-      const key = th.getAttribute('data-key');
-      if (!key) return;
-      if (sortKey === key) {
-        sortDir = (sortDir === 'asc') ? 'desc' : 'asc';
-      } else {
-        sortKey = key;
-        sortDir = NUMERIC_COLS.has(key) ? 'desc' : 'asc';
-      }
-      drawRows();
-    };
-    th.addEventListener('click', handle);
-    th.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        handle();
-      }
-    });
+  thead.addEventListener('click', (e) => {
+    const th = e.target.closest('th.sortable');
+    if (!th || !thead.contains(th)) return;
+
+    const key = th.getAttribute('data-key');
+    if (!key) return;
+
+    if (sortKey === key) {
+      sortDir = (sortDir === 'asc') ? 'desc' : 'asc';
+    } else {
+      sortKey = key;
+      sortDir = NUMERIC_COLS.has(key) ? 'desc' : 'asc';
+    }
+    drawRows();
   });
-  headersWired = true;
+
   updateSortHeaders();
 }
 
