@@ -79,13 +79,14 @@ function normalizeUpc(s) {
   // If your DB stores 12-digit UPCs, keep 12 as-is.
   // Otherwise pad to 13 (your server uses pad13 when inserting).
   return digits.length === 12 ? digits : digits.padStart(13, '0');
-}
+ }
 
 function collectUpcs() {
   const raw = String(upcTextarea?.value || '');
-  const parts = raw.split(/[^0-9]+/); // split on any non-digit
-  return Array.from(new Set(parts.map(normalizeUpc).filter(Boolean)));
-}
+  // split on any non-digit, drop empties, then pad & dedupe
+  const parts = raw.split(/[^0-9]+/).map(s => s.trim()).filter(s => s.length > 0);
+  return Array.from(new Set(parts.map(pad13)));
+ }
 
 // Safer numeric parser: handles "1,234.56", blanks, etc.
 function parseNumCell(v) {
@@ -273,6 +274,28 @@ async function runSearchUpcs() {
   }
 }
 
+async function runQuery() {
+  showError('');
+  const upcs = collectUpcs();
+  try {
+    if (upcs.length) {
+      const params = currentFilters();
+      const body = { ...params, upcs };
+      console.debug('[runQuery] POST /api/search-upcs', body);
+      const rows = await postJSON('/api/search-upcs', body);
+      renderRows(rows);
+    } else {
+      const params = currentFilters();
+      const qs = new URLSearchParams(params).toString();
+      console.debug('[runQuery] GET  /api/range?' + qs);
+      const rows = await getJSON(`/api/range?${qs}`);
+      renderRows(rows);
+    }
+  } catch (e) {
+    showError(e.message || 'Query failed');
+  }
+}
+
 function doExport() {
   const params = currentFilters();
   const upcs = collectUpcs();
@@ -281,8 +304,14 @@ function doExport() {
   location.href = `/api/export?${p.toString()}`;
 }
 
+// --- Dynamic label for Run button based on UPCs entered ---
+btnRun.textContent = collectUpcs().length ? 'Search UPCs' : 'Submit';
+upcTextarea.addEventListener('input', () => {
+btnRun.textContent = collectUpcs().length ? 'Search UPCs' : 'Submit';
+});
+
 // wire events
-btnRun?.addEventListener('click', runRange);
+btnRun?.addEventListener('click', runQuery);
 btnExport?.addEventListener('click', doExport);
 btnSearch?.addEventListener('click', runSearchUpcs);
 
