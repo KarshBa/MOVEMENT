@@ -84,25 +84,6 @@ export function querySubdepartments() {
   return db.prepare(`SELECT subdept_no, subdept_desc FROM subdepartments ORDER BY subdept_no ASC`).all();
 }
 
-function buildSelectAggBase() {
-  return `
-    SELECT
-      item_code                             AS "Item-Code",
-      MAX(item_brand)                       AS "Item-Brand",
-      MAX(item_pos_desc)                    AS "Item-POS description",
-      MAX(subdept_no)                       AS "Sub-department-Number",
-      MAX(subdept_desc)                     AS "Sub-department-Description",
-      MAX(category_no)                      AS "Category-Number",
-      MAX(category_desc)                    AS "Category-Description",
-      MAX(vendor_id)                        AS "Vendor-ID",
-      MAX(vendor_name)                      AS "Vendor-Name",
-      ROUND(SUM(units_sum), 6)              AS "Units-Sum",
-      ROUND(SUM(amount_sum), 2)             AS "Amount-Sum"
-    FROM raw_transactions
-    WHERE date_iso BETWEEN @start AND @end
-  `;
-}
-
 function buildWhereForSubdept(params, where) {
   if (params.subdept != null) {
     where.push(`subdept_no = @subdept`);
@@ -130,25 +111,6 @@ function buildWhereForBrand(params, where) {
     params.brand = `%${params.brand.replace(/[%_]/g, s => '\\' + s)}%`;
   }
 }
-
-export function rangeAggregate(params) {
-  const base = buildSelectAggBase();
-  const where = [];
-  buildWhereForSubdept(params, where);
-  const sql = [
-    base,
-    where.length ? 'AND ' + where.join(' AND ') : '',
-    `GROUP BY item_code`,
-    `ORDER BY "Amount-Sum" DESC`
-  ].join('\n');
-
-  return db.prepare(sql).all(params);
-}
-
-export function upcsAggregate(params, upcList) {
-  const base = buildSelectAggBase();
-  const where = [];
-  buildWhereForSubdept(params, where);
 
   // Dynamic placeholders for IN (...)
   const placeholders = upcList.map((_, i) => `@upc${i}`).join(',');
