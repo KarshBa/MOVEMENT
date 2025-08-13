@@ -9,6 +9,10 @@ import morgan from 'morgan';
 import crypto from 'crypto';
 import { format as csvFormat } from '@fast-csv/format';
 import { Worker } from 'node:worker_threads';
+import { parse as csvParse } from 'csv-parse';
+import * as XLSX from 'xlsx/xlsx.mjs';
+XLSX.set_fs(fs);
+import { parse as parseDateFns, format as formatDate, isValid } from 'date-fns';
 
 import { basicAuth } from './auth.js';
 import {
@@ -225,11 +229,6 @@ const CANONICAL_FROM_NORM = (() => {
 })();
 
 const REQUIRED_HEADERS_NORM = REQUIRED_HEADERS.map(normalizeHeader);
-
-function pad13(s) {
-  const digits = String(s ?? '').replace(/\D+/g, '');
-  return digits.padStart(13, '0');
-}
 
 function parseDateToISO(v) {
   if (!v) return null;
