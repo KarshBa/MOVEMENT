@@ -34,12 +34,39 @@ table{
 }
 th,td{padding:.6rem;border:1px solid #e0e0e0;font-size:.95rem;text-align:left;}
 th{background:#f1f3f4;}
-@media(max-width:600px){
-  table,thead,tbody,th,td,tr{display:block;width:100%;}
-  thead{display:none;}
-  tr{margin-bottom:.8rem;background:#fff;border-radius:var(--radius);box-shadow:0 1px 4px rgba(0,0,0,.1);}
-  td{border:none;position:relative;padding-left:50%;}
-  td::before{content:attr(data-label);position:absolute;left:0;top:0;width:48%;padding:.6rem;font-weight:600;text-transform:capitalize;}
+@media (max-width: 600px) {
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Keep the table as a real table; make it wider so each cell can stay one line */
+  #results {
+    display: table;
+    table-layout: auto;     /* let columns size naturally */
+    min-width: 1000px;      /* adjust as you like */
+  }
+  #results thead {
+    display: table-header-group;  /* keep headers visible */
+  }
+  #results tbody {
+    display: table-row-group;
+  }
+  #results tr {
+    display: table-row;
+  }
+  #results th,
+  #results td {
+    display: table-cell;
+    white-space: nowrap;   /* single line per cell */
+    max-width: none;       /* no clipping */
+    overflow: visible;     /* ensure it doesn’t hide text */
+    text-overflow: clip;   /* explicit: no ellipsis */
+    padding-left: .6rem;   /* reset left padding from old card style */
+  }
+  /* kill the old label pseudo element if any HTML still has data-label */
+  #results td::before {
+    content: none !important;
+  }
 }
 .page-info{
   margin:0.25rem 0 0.5rem;   /* small gap above the table */
