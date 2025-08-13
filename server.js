@@ -599,9 +599,16 @@ app.post('/api/search-upcs', (req, res) => {
   const vr = validateDateRange(body);
   if (vr.error) return res.status(400).json({ error: vr.error });
 
-  const upcsRaw = Array.isArray(body.upcs) ? body.upcs : [];
-  const upcList = upcsRaw.map(pad13).filter(Boolean);
-  if (upcList.length === 0) return res.json([]);
+  const raw = Array.isArray(body.upcs)
+  ? body.upcs
+  : String(body.upcs || '').split(/[^0-9]+/); // split on non-digits too
+
+const upcList = Array.from(
+  new Set(
+    raw.map(s => pad13(s)).filter(Boolean)
+  )
+);
+if (!upcList.length) return res.json([]);
 
   const params = {
     start: vr.start,
