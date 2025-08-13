@@ -69,3 +69,6 @@ th{background:#f1f3f4;}
 .suggest-list li:last-child{ border-bottom:none; }
 .suggest-list li:hover{ background:#f1f3f4; }
 .muted{ color:#5f6368; font-size:.8rem; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable[data-sort="asc"]::after  { content: " ▲"; font-size: .85em; }
+th.sortable[data-sort="desc"]::after { content: " ▼"; font-size: .85em; }
