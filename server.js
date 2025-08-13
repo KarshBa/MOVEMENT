@@ -215,6 +215,57 @@ function normalizeHeader(h) {
   return s;
 }
 
+// --- tolerant UPC helpers (borrowed/adapted from your other app) ---
+function normalizeUPC(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  // 11-digit variable-weight (scanner already removed check digit)
+  if (d.length === 11 && d[0] === '2') {
+    return ('00' + d.slice(0, 7) + '0000').padStart(13, '0');
+  }
+  // UPC-A 12 digits → remove *one* check digit (11 significant)
+  if (d.length === 12) d = d.slice(0, 11);
+  // everything else → left-pad to 13
+  return d.padStart(13, '0');
+}
+
+function decodeScale(upc) {
+  // accept 11 **or** 12 digits and must start with '2'
+  if (!/^\d{11,12}$/.test(upc) || upc[0] !== '2') return null;
+  const payload = upc.length === 12 ? upc.slice(0, -1) : upc;
+  const cat = p => ('00' + p).padEnd(13, '0');
+  return {
+    // price not used for movement search, but harmless to compute
+    price: parseInt(payload.slice(7, 11), 10) / 100,
+    catCodes: [cat(payload.slice(0, 7)), cat(payload.slice(0, 6))]
+  };
+}
+
+// Expand one user-entered token into all plausible DB item_code candidates
+function expandUpcCandidates(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return [];
+  const out = new Set();
+
+  // A) Your DB canonical form from uploads (digits → pad to 13)
+  out.add(pad13(d));
+
+  // B) Leading-zero EAN-13 for UPC-A 12 digits
+  if (d.length === 12) out.add(('0' + d).slice(0, 13));
+
+  // C) “drop check-digit then pad” form used by the other app
+  if (d.length === 12) out.add(pad13(d.slice(0, 11)));
+
+  // D) Raw 11-digit payload padded (covers already-stripped UPC-A + some scales)
+  if (d.length === 11) out.add(pad13(d));
+
+  // E) Variable-weight / scale labels → catalogue codes
+  const s = decodeScale(d);
+  if (s) s.catCodes.forEach(c => out.add(c));
+
+  return Array.from(out);
+}
+
 // map from normalized header back to canonical required name
 const CANONICAL_FROM_NORM = (() => {
   const map = new Map();
@@ -604,16 +655,17 @@ app.post('/api/search-upcs', (req, res) => {
   const vr = validateDateRange(body);
   if (vr.error) return res.status(400).json({ error: vr.error });
 
-  const raw = Array.isArray(body.upcs)
-  ? body.upcs
-  : String(body.upcs || '').split(/[^0-9]+/); // split on non-digits too
+  // Build a tolerant candidate set for each token the user supplied
+  const rawTokens = Array.isArray(body.upcs)
+    ? body.upcs
+    : String(body.upcs || '').split(/[\s,;\n]+/);
 
-const upcList = Array.from(
-  new Set(
-    raw.map(s => pad13(s)).filter(Boolean)
-  )
-);
-if (!upcList.length) return res.json([]);
+  const cand = new Set();
+  for (const t of rawTokens) {
+    for (const c of expandUpcCandidates(t)) cand.add(c);
+  }
+  const upcList = Array.from(cand);
+  if (!upcList.length) return res.json([]);
 
   const params = {
     start: vr.start,
@@ -648,9 +700,19 @@ app.get('/api/export', (req, res) => {
   if (req.query.subdept_end) params.subdept_end = Number.parseInt(req.query.subdept_end);
   if (req.query.brand) params.brand = String(req.query.brand).trim();
 
-  const rows = (req.query.upcs && String(req.query.upcs).trim())
-    ? upcsAggregate(params, String(req.query.upcs).split(',').map(s => s.trim()).map(pad13))
-    : rangeAggregate(params);
+  let rows;
+if (req.query.upcs && String(req.query.upcs).trim()) {
+  // Accept commas, spaces, or newlines — expand each token like /api/search-upcs
+  const rawTokens = String(req.query.upcs).split(/[\s,;\n]+/);
+  const cand = new Set();
+  for (const t of rawTokens) {
+    for (const c of expandUpcCandidates(t)) cand.add(c);
+  }
+  const upcList = Array.from(cand);
+  rows = upcList.length ? upcsAggregate(params, upcList) : [];
+} else {
+  rows = rangeAggregate(params);
+}
 
   const filename = `item_movement_${vr.start.replace(/-/g,'')}_${vr.end.replace(/-/g,'')}.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
