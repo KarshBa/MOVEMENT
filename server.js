@@ -515,6 +515,12 @@ async function runWorkerOnce() {
 // kick on boot and occasionally after enqueue
 setImmediate(runWorkerOnce);
 
+// --- helpers (add this back)
+function pad13(s) {
+  const digits = String(s ?? '').replace(/\D+/g, '');
+  return digits.padStart(13, '0');
+}
+
 // ---- API routes
 // List subdepartments for the UI dropdown
 app.get('/api/subdepartments', (req, res) => {
