@@ -191,45 +191,23 @@ async function run() {
 
   // Weekly 5
   const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
-  const shortLabels = (weekly.labels || []).map(s => s.slice(5)); // "MM-DD–YYYY-MM-DD" -> trim year start for compactness
-  
-  // Weekly 5 (unchanged call; gets y auto-fit now)
-drawLineChart(
-  weeklyCanvas,
-  [{ name: 'Weekly Sales', data: weekly.points }],
-  { xLabels: shortLabels }
-);
-
-// Compare current vs previous (labels drawn at line ends)
-drawLineChart(
-  compareCanvas,
-  [
-    { name:'Current Week',  data: cmp.current,  color:'#1a73e8' },
-    { name:'Previous Week', data: cmp.previous, color:'#d93025' }
-  ],
-  { xLabels: cmp.labels }  // end labels are on by default
-);
-
-  const compareLegend = document.getElementById('compareLegend');
-drawLineChart(compareCanvas,
-  [
-    { name:'Current Week',  data: cmp.current,  color:'#1a73e8' },
-    { name:'Previous Week', data: cmp.previous, color:'#d93025' }
-  ],
-  { xLabels: cmp.labels, legendEl: compareLegend }
-);
+  const shortLabels = (weekly.labels || []).map(s => {
+  const [a, b] = s.split('–');           // ["YYYY-MM-DD", "YYYY-MM-DD"]
+  return `${a.slice(5)}–${b.slice(5)}`;  // "MM-DD–MM-DD"
+});
 
   weeklyLabels.textContent = weekly.labels.join('   |   ');
 
-  // Compare current vs previous
+  // Compare current vs previous — fetch first, then draw ONCE
   const cmp = await getJSON(`/api/dept-sales/compare?subdept=${encodeURIComponent(subdept)}`);
+  const compareLegend = document.getElementById('compareLegend'); // optional
   drawLineChart(
     compareCanvas,
     [
-      { name:'Current',  data: cmp.current,  color:'#1a73e8' },
-      { name:'Previous', data: cmp.previous, color:'#d93025' }
+      { name: 'Current Week',  data: cmp.current,  color: '#1a73e8' },
+      { name: 'Previous Week', data: cmp.previous, color: '#d93025' }
     ],
-    { xLabels: cmp.labels }
+    { xLabels: cmp.labels, legendEl: compareLegend }
   );
 
   // Top 10 items
