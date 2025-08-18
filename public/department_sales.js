@@ -265,6 +265,18 @@ async function run() {
 }
 
 btn.addEventListener('click', run);
+// Print button (CSP-safe: no inline JS)
+document.getElementById('btnPrint')?.addEventListener('click', () => {
+  window.print();
+});
+
+// Ensure charts reflow crisply when entering/exiting print
+window.addEventListener('beforeprint', () => {
+  window.dispatchEvent(new Event('resize'));
+});
+window.addEventListener('afterprint', () => {
+  window.dispatchEvent(new Event('resize'));
+});
 
 (async function init(){
   try {
