@@ -632,6 +632,155 @@ function validateDateRange(q) {
   return { start, end };
 }
 
+// ===== Department Sales helpers =====
+function toDate(dstr){ const [y,m,d] = dstr.split('-').map(Number); return new Date(y, m-1, d); }
+function fmtDate(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+
+// Find the last fully-complete week that exists in the DB (Sun–Sat).
+// If max date is a Saturday, we use that; otherwise step back to the previous Saturday.
+function getLastCompleteWeekEnd() {
+  const row = db.prepare("SELECT MAX(date_iso) AS maxDate FROM raw_transactions").get();
+  if (!row || !row.maxDate) return null;
+  const maxD = toDate(row.maxDate);
+  const dow = maxD.getDay(); // 0=Sun ... 6=Sat
+  const lastSat = dow === 6 ? maxD : addDays(maxD, -(dow + 1)); // go back to Saturday
+  return fmtDate(lastSat);
+}
+
+function weekBoundsFromEnd(satStr) {
+  const end = toDate(satStr);
+  const start = addDays(end, -6);
+  return { start: fmtDate(start), end: fmtDate(end) };
+}
+
+function sumAmountBetween({ start, end, subdept }) {
+  const sqlAll = `
+    SELECT SUM(amount_sum) AS total
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ?`;
+  const sqlDept = `
+    SELECT SUM(amount_sum) AS total
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ? AND subdept_no = ?`;
+
+  const row = subdept && subdept !== 'all'
+    ? db.prepare(sqlDept).get(start, end, Number(subdept))
+    : db.prepare(sqlAll).get(start, end);
+
+  return Number(row?.total || 0);
+}
+
+function dailySeriesBetween({ start, end, subdept }) {
+  const sqlAll = `
+    SELECT date_iso AS d, SUM(amount_sum) AS amt
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ?
+    GROUP BY date_iso`;
+  const sqlDept = `
+    SELECT date_iso AS d, SUM(amount_sum) AS amt
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ? AND subdept_no = ?
+    GROUP BY date_iso`;
+
+  const rows = subdept && subdept !== 'all'
+    ? db.prepare(sqlDept).all(start, end, Number(subdept))
+    : db.prepare(sqlAll).all(start, end);
+
+  const map = new Map(rows.map(r => [r.d, Number(r.amt || 0)]));
+  const out = [];
+  let cur = toDate(start);
+  const endD = toDate(end);
+  while (cur <= endD) {
+    const k = fmtDate(cur);
+    out.push({ date: k, amount: map.get(k) || 0 });
+    cur = addDays(cur, 1);
+  }
+  return out;
+}
+
+// ===== Department Sales routes =====
+
+// Meta: last complete week-end (Saturday) and the 5 week ranges we’ll use.
+app.get('/api/dept-sales/meta', (_req, res) => {
+  const lastWeekEnd = getLastCompleteWeekEnd();
+  if (!lastWeekEnd) return res.json({ lastWeekEnd: null, weeks: [] });
+
+  const weeks = [];
+  for (let i = 0; i < 5; i++) {
+    const sat = fmtDate(addDays(toDate(lastWeekEnd), -7 * i));
+    const w = weekBoundsFromEnd(sat);
+    weeks.push({ labelEnd: sat, ...w }); // {start,end,labelEnd}
+  }
+  res.json({ lastWeekEnd, weeks: weeks.reverse() }); // oldest→newest for chart left→right
+});
+
+// Weekly totals for last 5 complete weeks (storewide or single subdept).
+// Query: ?subdept=all  OR  ?subdept=###   (omit/empty == all)
+app.get('/api/dept-sales/weekly', (req, res) => {
+  const subdept = (req.query.subdept || 'all').toString();
+  const lastWeekEnd = getLastCompleteWeekEnd();
+  if (!lastWeekEnd) return res.json({ points: [], labels: [] });
+
+  const labels = [];
+  const points = [];
+  for (let i = 4; i >= 0; i--) {
+    const sat = fmtDate(addDays(toDate(lastWeekEnd), -7 * i));
+    const { start, end } = weekBoundsFromEnd(sat);
+    labels.push(`${start}–${end}`);
+    points.push(sumAmountBetween({ start, end, subdept }));
+  }
+  res.json({ labels, points, lastWeekEnd });
+});
+
+// Day-by-day compare: current complete week vs previous week (each Sun–Sat).
+// Uses last complete week by default; optional ?end=YYYY-MM-DD to pick a Saturday explicitly.
+app.get('/api/dept-sales/compare', (req, res) => {
+  const subdept = (req.query.subdept || 'all').toString();
+  const explicitEnd = String(req.query.end || '').trim();
+  const weekEnd = explicitEnd || getLastCompleteWeekEnd();
+  if (!weekEnd) return res.json({ labels: [], current: [], previous: [], weekEnd: null });
+
+  const curW = weekBoundsFromEnd(weekEnd);
+  const prevW = weekBoundsFromEnd(fmtDate(addDays(toDate(weekEnd), -7)));
+
+  const cur = dailySeriesBetween({ start: curW.start, end: curW.end, subdept });
+  const prev = dailySeriesBetween({ start: prevW.start, end: prevW.end, subdept });
+
+  const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const current = cur.map(x => x.amount);
+  const previous = prev.map(x => x.amount);
+
+  res.json({ labels, current, previous, weekEnd });
+});
+
+// Top 10 items by $ for the last complete week.
+// Query: ?subdept=all  OR  ?subdept=###
+app.get('/api/dept-sales/top-items', (req, res) => {
+  const subdept = (req.query.subdept || 'all').toString();
+  const weekEnd = getLastCompleteWeekEnd();
+  if (!weekEnd) return res.json({ items: [], range: null });
+
+  const { start, end } = weekBoundsFromEnd(weekEnd);
+
+  const base = `
+    SELECT item_code AS code,
+           MAX(item_brand) AS brand,
+           MAX(item_pos_desc) AS description,
+           SUM(amount_sum) AS amount
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ?`;
+  const group = ` GROUP BY item_code ORDER BY amount DESC LIMIT 10`;
+
+  const rows = (subdept && subdept !== 'all')
+    ? db.prepare(base + ` AND subdept_no = ?` + group).all(start, end, Number(subdept))
+    : db.prepare(base + group).all(start, end);
+
+  res.json({ items: rows.map(r => ({ ...r, amount: Number(r.amount || 0) })), range: { start, end } });
+});
+
+index: ['admin.html', 'item_movement.html', 'department_sales.html']
+
 app.get('/api/range', (req, res) => {
   const vr = validateDateRange(req.query);
   if (vr.error) return res.status(400).json({ error: vr.error });
