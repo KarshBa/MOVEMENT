@@ -121,3 +121,41 @@ th.sortable[data-sort="desc"]::after { content: " ▼"; }
 }
 .chart-wrap { position: relative; height: 320px; }
 canvas { width: 100%; height: 100%; display: block; }
+/* === Print styles === */
+@media print {
+  @page { size: auto; margin: 12mm; }          /* comfortable margins */
+
+  body { background:#fff !important; }
+  header { background:#fff !important; color:#000 !important; border-bottom:1px solid #000; }
+  main { margin:0; padding:0; }
+
+  /* Hide on print: interactive controls & helper text */
+  [aria-label="filters"],
+  #btnGo,
+  #info {
+    display: none !important;
+  }
+
+  /* Cards: crisp borders, avoid being split across pages */
+  .card {
+    margin: 8mm 0;
+    border: 1px solid #000;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid; /* older browsers */
+  }
+
+  /* Preserve table header shading and make borders darker */
+  #top10 th { 
+    background: #eaeaea !important; 
+    -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact;
+  }
+  #top10, #top10 th, #top10 td { border-color:#000 !important; }
+
+  /* Canvases: fixed height for consistent pagination */
+  canvas { height: 200px !important; }
+
+  /* Optional: show the compare legend inline to save space */
+  #compareLegend { margin-top: 2mm; }
+}
