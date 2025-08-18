@@ -34,7 +34,8 @@ function drawLineChart(canvas, seriesArr, options = {}) {
 
   const fmtMoney = options.yFormatter || (n => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n));
   const usingTwoLineX = options.xLabelLines && Array.isArray(options.xLabelLines);
-  const pad = options.pad || { l: 52, r: 14, t: 10, b: usingTwoLineX ? 38 : 26 };
+  const usingPills   = options.xPills && Array.isArray(options.xPills);
+  const pad = options.pad || { l: 52, r: 14, t: 10, b: usingPills ? 48 : (usingTwoLineX ? 38 : 26) };
   const plotW = Math.max(10, W - pad.l - pad.r);
   const plotH = Math.max(10, H - pad.t - pad.b);
 
@@ -98,68 +99,55 @@ function drawLineChart(canvas, seriesArr, options = {}) {
     ctx.fillText(fmtMoney(v), 6, y);
   }
 
-    // x labels (supports single-line or two-line)
-  if (options.xLabelLines && options.xLabelLines.length === n) {
-    ctx.fillStyle = '#5f6368';
-    ctx.textAlign = 'center';
-    ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
-    for (let i = 0; i < n; i++) {
-      const x = xPos(i);
-      const [l1, l2] = options.xLabelLines[i];
-      // first line a bit above bottom, second line at bottom
-      ctx.fillText(l1, x, H - 18);
-      ctx.fillText(l2, x, H - 4);
-    }
-  } else if (options.xLabels && options.xLabels.length === n) {
-    ctx.fillStyle = '#5f6368';
-    ctx.textAlign = 'center';
-    ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
-    for (let i = 0; i < n; i++) {
-      const x = xPos(i);
-      ctx.fillText(options.xLabels[i], x, H - 4);
+   // X labels: supports three modes — xPills (day + colored pills), two-line, or single-line
+if (options.xPills && options.xPills.length === n) {
+  ctx.fillStyle = '#5f6368';
+  ctx.textAlign = 'center';
+  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  for (let i = 0; i < n; i++) {
+    const x = xPos(i);
+    const item = options.xPills[i]; // { day: 'Mon', pills: [{text, color}, ...] }
+
+    // day label above pills
+    ctx.fillText(item.day || '', x, H - 30);
+
+    // pills (1–2) centered under the day
+    const pills = Array.isArray(item.pills) ? item.pills : [];
+    if (pills.length === 1) {
+      drawPill(x, H - 6, pills[0].text, pills[0].color);
+    } else if (pills.length === 2) {
+      const gap = 8;
+      ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+      const widthFor = (t) => Math.ceil(ctx.measureText(t).width) + 12; // padH*2
+      const w0 = widthFor(pills[0].text);
+      const w1 = widthFor(pills[1].text);
+      const total = w0 + w1 + gap;
+      const leftCenter  = x - total / 2 + w0 / 2;
+      const rightCenter = x + total / 2 - w1 / 2;
+
+      drawPill(leftCenter,  H - 6, pills[0].text, pills[0].color);
+      drawPill(rightCenter, H - 6, pills[1].text, pills[1].color);
     }
   }
-
-  // draw series
-  const palette = options.palette || ['#1a73e8', '#d93025', '#188038', '#f29c1f'];
-  seriesArr.forEach((s, idx) => {
-    const color = s.color || palette[idx % palette.length];
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    (s.data || []).forEach((v, i) => {
-      const x = xPos(i), y = yPos(v);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // points
-    ctx.fillStyle = color;
-    (s.data || []).forEach((v, i) => {
-      const x = xPos(i), y = yPos(v);
-      ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // end-of-line label
-    if (options.endLabels !== false) {
-      // find last finite point
-      for (let i = (s.data?.length || 0) - 1; i >= 0; i--) {
-        const v = s.data[i];
-        if (Number.isFinite(v)) {
-          const x = xPos(i), y = yPos(v);
-          ctx.fillStyle = color;
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'middle';
-          ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
-          const label = s.name || `Series ${idx + 1}`;
-          ctx.fillText(` ${label}`, x + 8, y);
-          break;
-        }
-      }
-    }
-  });
+} else if (options.xLabelLines && options.xLabelLines.length === n) {
+  ctx.fillStyle = '#5f6368';
+  ctx.textAlign = 'center';
+  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  for (let i = 0; i < n; i++) {
+    const x = xPos(i);
+    const [l1, l2] = options.xLabelLines[i];
+    ctx.fillText(l1, x, H - 18);
+    ctx.fillText(l2, x, H - 4);
+  }
+} else if (options.xLabels && options.xLabels.length === n) {
+  ctx.fillStyle = '#5f6368';
+  ctx.textAlign = 'center';
+  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  for (let i = 0; i < n; i++) {
+    const x = xPos(i);
+    ctx.fillText(options.xLabels[i], x, H - 4);
+  }
+}
 
   // optional HTML legend target
   if (options.legendEl) {
@@ -182,6 +170,34 @@ function drawLineChart(canvas, seriesArr, options = {}) {
     else m = 10;
     return m * pow10;
   }
+}
+
+function drawPill(xCenter, yBaseline, text, bg) {
+  const padH = 6, padV = 3, radius = 6;
+  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  const w = Math.ceil(ctx.measureText(text).width) + padH * 2;
+  const h = 18;
+  const x = Math.round(xCenter - w / 2);
+  const y = Math.round(yBaseline - h);
+
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+
+  ctx.fillStyle = bg;
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + w / 2, y + h / 2 + 0.5);
 }
 
 async function loadSubdepts() {
@@ -242,22 +258,28 @@ if (cmp.weekEnd) {
   cache.curName = curName;
   cache.prevName = prevName;
 
-  // Two-line X labels: day on top, money "current / previous" on bottom
-  const xLabelLines = cmp.labels.map((day, i) => {
-    const cur = cmp.current[i] ?? 0;
-    const prv = cmp.previous[i] ?? 0;
-    return [day, `${fmtMoney(cur)} / ${fmtMoney(prv)}`];
-  });
+  // Day label + colored amount pills (blue=current, red=previous)
+const xPills = cmp.labels.map((day, i) => {
+  const cur = cmp.current[i] ?? 0;
+  const prv = cmp.previous[i] ?? 0;
+  return {
+    day,
+    pills: [
+      { text: fmtMoney(cur), color: '#1a73e8' },
+      { text: fmtMoney(prv), color: '#d93025' }
+    ]
+  };
+});
 
-  const compareLegend = document.getElementById('compareLegend'); // optional legend container
-  drawLineChart(
-    compareCanvas,
-    [
-      { name: curName,  data: cmp.current,  color: '#1a73e8' },
-      { name: prevName, data: cmp.previous, color: '#d93025' }
-    ],
-    { xLabelLines, legendEl: compareLegend, pad: { l: 52, r: 28, t: 10, b: 26 } }
-  );
+const compareLegend = document.getElementById('compareLegend');
+drawLineChart(
+  compareCanvas,
+  [
+    { name: curName,  data: cmp.current,  color: '#1a73e8' },
+    { name: prevName, data: cmp.previous, color: '#d93025' }
+  ],
+  { xPills, legendEl: compareLegend, pad: { l: 52, r: 28, t: 10, b: 48 } }
+);
 
   // Top 10 items (unchanged)
   const top = await getJSON(`/api/dept-sales/top-items?subdept=${encodeURIComponent(subdept)}`);
@@ -310,22 +332,28 @@ window.addEventListener('resize', () => {
       { xLabelLines: weeklyLines }
     );
 
-    // compare two-line labels
-    const xLabelLines = cache.cmp.labels.map((day, i) => {
-      const cur = cache.cmp.current[i] ?? 0;
-      const prv = cache.cmp.previous[i] ?? 0;
-      return [day, `${fmtMoney(cur)} / ${fmtMoney(prv)}`];
-    });
+    // compare pills
+const xPills = cache.cmp.labels.map((day, i) => {
+  const cur = cache.cmp.current[i] ?? 0;
+  const prv = cache.cmp.previous[i] ?? 0;
+  return {
+    day,
+    pills: [
+      { text: fmtMoney(cur), color: '#1a73e8' },
+      { text: fmtMoney(prv), color: '#d93025' }
+    ]
+  };
+});
 
-    const compareLegend = document.getElementById('compareLegend');
-    drawLineChart(
-      compareCanvas,
-      [
-        { name: cache.curName,  data: cache.cmp.current,  color: '#1a73e8' },
-        { name: cache.prevName, data: cache.cmp.previous, color: '#d93025' }
-      ],
-      { xLabelLines, legendEl: compareLegend }
-    );
+const compareLegend = document.getElementById('compareLegend');
+drawLineChart(
+  compareCanvas,
+  [
+    { name: cache.curName,  data: cache.cmp.current,  color: '#1a73e8' },
+    { name: cache.prevName, data: cache.cmp.previous, color: '#d93025' }
+  ],
+  { xPills, legendEl: compareLegend, pad: { l: 52, r: 28, t: 10, b: 48 } }
+);
   });
 }, { passive:true });
 })();
