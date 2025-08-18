@@ -114,7 +114,7 @@ if (options.xPills && options.xPills.length === n) {
     // pills (1–2) centered under the day
     const pills = Array.isArray(item.pills) ? item.pills : [];
     if (pills.length === 1) {
-      drawPill(x, H - 6, pills[0].text, pills[0].color);
+      drawPill(ctx, x, H - 6, pills[0].text, pills[0].color);
     } else if (pills.length === 2) {
       const gap = 8;
       ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
@@ -125,8 +125,8 @@ if (options.xPills && options.xPills.length === n) {
       const leftCenter  = x - total / 2 + w0 / 2;
       const rightCenter = x + total / 2 - w1 / 2;
 
-      drawPill(leftCenter,  H - 6, pills[0].text, pills[0].color);
-      drawPill(rightCenter, H - 6, pills[1].text, pills[1].color);
+      drawPill(ctx, leftCenter,  H - 6, pills[0].text, pills[0].color);
+      drawPill(ctx, rightCenter, H - 6, pills[1].text, pills[1].color);
     }
   }
 } else if (options.xLabelLines && options.xLabelLines.length === n) {
@@ -172,7 +172,7 @@ if (options.xPills && options.xPills.length === n) {
   }
 }
 
-function drawPill(xCenter, yBaseline, text, bg) {
+function drawPill(ctx, xCenter, yBaseline, text, bg) {
   const padH = 6, padV = 3, radius = 6;
   ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
   const w = Math.ceil(ctx.measureText(text).width) + padH * 2;
