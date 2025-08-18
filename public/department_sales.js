@@ -14,6 +14,7 @@ const weeklyCanvas  = document.getElementById('weeklyChart');
 const compareCanvas = document.getElementById('compareChart');
 const weeklyLabels  = document.getElementById('weeklyLabels');
 const topTbody      = document.getElementById('top10Body');
+let cache = { weekly: null, cmp: null, labels: null };
 
 function fmtMoney(n){ return new Intl.NumberFormat(undefined,{minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
 
@@ -189,28 +190,31 @@ async function run() {
   const meta = await getJSON('/api/dept-sales/meta');
   wkEndEl.textContent = meta.lastWeekEnd || '—';
 
-  // Weekly 5
-  const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
-  const shortLabels = (weekly.labels || []).map(s => {
-  const [a, b] = s.split('–');           // ["YYYY-MM-DD", "YYYY-MM-DD"]
-  return `${a.slice(5)}–${b.slice(5)}`;  // "MM-DD–MM-DD"
-});
+  // Weekly 5 — store in cache and draw
+  cache.weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
+  const shortLabels = (cache.weekly.labels || []).map(s => {
+    const [a, b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`; // "MM-DD–MM-DD"
+  });
+  drawLineChart(
+    weeklyCanvas,
+    [{ name: 'Weekly Sales', data: cache.weekly.points }],
+    { xLabels: shortLabels }
+  );
+  weeklyLabels.textContent = cache.weekly.labels.join('   |   ');
 
-  weeklyLabels.textContent = weekly.labels.join('   |   ');
-
-  // Compare current vs previous — fetch first, then draw ONCE
-  const cmp = await getJSON(`/api/dept-sales/compare?subdept=${encodeURIComponent(subdept)}`);
-  const compareLegend = document.getElementById('compareLegend'); // optional
+  // Compare current vs previous — store in cache and draw (with legend)
+  cache.cmp = await getJSON(`/api/dept-sales/compare?subdept=${encodeURIComponent(subdept)}`);
+  const compareLegend = document.getElementById('compareLegend');
   drawLineChart(
     compareCanvas,
     [
-      { name: 'Current Week',  data: cmp.current,  color: '#1a73e8' },
-      { name: 'Previous Week', data: cmp.previous, color: '#d93025' }
+      { name: 'Current Week',  data: cache.cmp.current,  color: '#1a73e8' },
+      { name: 'Previous Week', data: cache.cmp.previous, color: '#d93025' }
     ],
-    { xLabels: cmp.labels, legendEl: compareLegend }
+    { xLabels: cache.cmp.labels, legendEl: compareLegend }
   );
 
-  // Top 10 items
+  // Top 10 items (unchanged)
   const top = await getJSON(`/api/dept-sales/top-items?subdept=${encodeURIComponent(subdept)}`);
   topTbody.innerHTML = (top.items || []).map(it => `
     <tr>
@@ -233,9 +237,29 @@ btn.addEventListener('click', run);
     info.textContent = e.message || 'Failed to load data.';
   }
 
-  // redraw charts on resize for crisp DPR scaling
-  window.addEventListener('resize', () => {
-    // quick re-draw using last data by simply re-running
-    run().catch(()=>{});
-  }, { passive:true });
-})();
+  // only redraw with cache on resize (no refetch)
+window.addEventListener('resize', () => {
+  if (!cache.weekly || !cache.cmp) return;
+
+  const shortLabels = (cache.weekly.labels || []).map(s => {
+    const [a, b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
+  });
+
+  // redraw weekly with cached data
+  drawLineChart(
+    weeklyCanvas,
+    [{ name: 'Weekly Sales', data: cache.weekly.points }],
+    { xLabels: shortLabels }
+  );
+
+  // redraw compare with cached data
+  const compareLegend = document.getElementById('compareLegend');
+  drawLineChart(
+    compareCanvas,
+    [
+      { name: 'Current Week',  data: cache.cmp.current,  color: '#1a73e8' },
+      { name: 'Previous Week', data: cache.cmp.previous, color: '#d93025' }
+    ],
+    { xLabels: cache.cmp.labels, legendEl: compareLegend }
+  );
+}, { passive: true });
