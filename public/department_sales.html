@@ -16,7 +16,8 @@
     }
     .legend { font-size:.9rem; color:#5f6368; margin:.25rem 0 .5rem; }
     .muted { color:#5f6368; font-size:.85rem; }
-    #top10 td, #top10 th { white-space: nowrap; }
+    #top10 th:last-child,
+    #top10 td:last-child { text-align: right; }
   </style>
 </head>
 <body>
@@ -35,13 +36,13 @@
 
     <div class="card">
       <div class="legend"><strong>Last 5 complete weeks</strong> (Sun–Sat)</div>
-      <div class="chart-wrap"><canvas id="weeklyChart"></canvas></div>
+      <canvas id="weeklyChart" role="img" aria-label="Sales totals for the last 5 complete weeks"></canvas>
       <div id="weeklyLabels" class="muted" style="margin-top:.25rem;"></div>
     </div>
 
     <div class="card">
       <div class="legend"><strong>This week vs previous week</strong> (daily)</div>
-      <div class="chart-wrap"><canvas id="compareChart"></canvas></div>
+      <canvas id="compareChart" role="img" aria-label="Current week sales compared to previous week, day by day"></canvas>
       <div id="compareLegend" class="muted" style="margin-top:.25rem;"></div>
     </div>
 
