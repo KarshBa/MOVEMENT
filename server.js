@@ -84,7 +84,7 @@ app.use(basicAuth);
 app.use(express.static(PUBLIC_DIR, {
   etag: true,
   maxAge: '7d',
-  index: ['admin.html', 'item_movement.html']
+  index: ['admin.html', 'item_movement.html', 'department_sales.html']
 }));
 
 // ---- Multer upload (disk to tmp)
@@ -778,8 +778,6 @@ app.get('/api/dept-sales/top-items', (req, res) => {
 
   res.json({ items: rows.map(r => ({ ...r, amount: Number(r.amount || 0) })), range: { start, end } });
 });
-
-index: ['admin.html', 'item_movement.html', 'department_sales.html']
 
 app.get('/api/range', (req, res) => {
   const vr = validateDateRange(req.query);
