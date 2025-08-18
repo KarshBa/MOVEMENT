@@ -18,6 +18,19 @@
     .muted { color:#5f6368; font-size:.85rem; }
     #top10 th:last-child,
     #top10 td:last-child { text-align: right; }
+    @media print {
+  /* Hide controls in print, optional: */
+  header, #btnGo, #btnPrint, section[aria-label="filters"] { display: none !important; }
+
+  /* Keep charts together on page 1 */
+  .card { break-inside: avoid; }
+
+  /* Force Top 10 card onto a new page (page 2) */
+  #top10Card { break-before: page; }
+
+  /* Make canvas crisp on print */
+  canvas { height: auto !important; }
+}
   </style>
 </head>
 <body>
@@ -46,7 +59,7 @@
       <div id="compareLegend" class="muted" style="margin-top:.25rem;"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="top10Card">
       <div class="legend"><strong>Top 10 items by sales ($)</strong> — last complete week</div>
       <div class="table-scroll">
         <table id="top10" style="width:100%;">
