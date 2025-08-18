@@ -35,9 +35,10 @@ function drawLineChart(canvas, seriesArr, options = {}) {
   const fmtMoney = options.yFormatter || (n => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n));
   const usingTwoLineX = options.xLabelLines && Array.isArray(options.xLabelLines);
   const usingPills   = options.xPills && Array.isArray(options.xPills);
-  const pad = options.pad || { l: 52, r: 14, t: 10, b: usingPills ? 48 : (usingTwoLineX ? 38 : 26) };
+  const pad = options.pad || { l: 52, r: 36, t: 10, b: (usingTwoLineX || options.xPills) ? 44 : 26 };
   const plotW = Math.max(10, W - pad.l - pad.r);
   const plotH = Math.max(10, H - pad.t - pad.b);
+  const endGap = options.endGap ?? 12;
 
   const n = seriesArr[0]?.data?.length || 0;
   const allVals = seriesArr.flatMap(s => (s.data || []).filter(v => Number.isFinite(v)));
@@ -65,8 +66,10 @@ function drawLineChart(canvas, seriesArr, options = {}) {
   max = Math.ceil(max / nice) * nice;
 
   function xPos(i) {
-    return pad.l + (n <= 1 ? plotW / 2 : (plotW * (i / (n - 1))));
-  }
+  const span = Math.max(0, plotW - endGap);
+  return pad.l + (n <= 1 ? span / 2 : (span * (i / (n - 1))));
+}
+  
   function yPos(v) {
     const t = (v - min) / (max - min || 1);
     return pad.t + (1 - t) * plotH;
@@ -149,6 +152,49 @@ if (options.xPills && options.xPills.length === n) {
   }
 }
 
+// draw series (round caps/joins for visibility)
+const palette = options.palette || ['#188038', '#f29c1f', '#1a73e8', '#d93025'];
+seriesArr.forEach((s, idx) => {
+  const color = s.color || palette[idx % palette.length];
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap  = 'round';
+
+  ctx.beginPath();
+  (s.data || []).forEach((v, i) => {
+    const x = xPos(i), y = yPos(v);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // points
+  ctx.fillStyle = color;
+  (s.data || []).forEach((v, i) => {
+    const x = xPos(i), y = yPos(v);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // end-of-line label
+  if (options.endLabels !== false) {
+    for (let i = (s.data?.length || 0) - 1; i >= 0; i--) {
+      const v = s.data[i];
+      if (Number.isFinite(v)) {
+        const x = xPos(i), y = yPos(v);
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+        const label = s.name || `Series ${idx + 1}`;
+        ctx.fillText(` ${label}`, x + 8, y);
+        break;
+      }
+    }
+  }
+});
+  
   // optional HTML legend target
   if (options.legendEl) {
     options.legendEl.innerHTML = seriesArr.map((s, idx) => {
@@ -241,44 +287,49 @@ async function run() {
     // Compare current vs previous — fetch first, then draw ONCE
   const cmp = await getJSON(`/api/dept-sales/compare?subdept=${encodeURIComponent(subdept)}`);
 
-  // Build human week ranges from the server's Saturday (weekEnd)
+  // Parse "YYYY-MM-DD" as a local date (avoid UTC shift)
+function parseYMDLocal(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd) || '');
+  if (!m) return null;
+  const y = +m[1], mo = +m[2] - 1, d = +m[3];
+  return new Date(y, mo, d); // local midnight
+}
+
+// Build human week ranges from the server's Saturday (weekEnd) — label Sun–Sat
 let curName = 'Current Week', prevName = 'Previous Week'; // safe defaults
 if (cmp.weekEnd) {
-  const weekEnd = new Date(cmp.weekEnd); // Saturday
-  if (!Number.isNaN(weekEnd.getTime())) {
-    const curStart = new Date(weekEnd); curStart.setDate(weekEnd.getDate() - 6);
-    const prevEnd  = new Date(weekEnd); prevEnd.setDate(weekEnd.getDate() - 7);
-    const prevStart= new Date(prevEnd);  prevStart.setDate(prevEnd.getDate() - 6);
+  const weekEnd = parseYMDLocal(cmp.weekEnd); // Saturday local
+  if (weekEnd && !Number.isNaN(weekEnd.getTime())) {
+    const curStart = new Date(weekEnd); curStart.setDate(weekEnd.getDate() - 6); // Sunday
+    const prevEnd  = new Date(weekEnd); prevEnd.setDate(weekEnd.getDate() - 7); // prior Saturday
+    const prevStart= new Date(prevEnd); prevStart.setDate(prevEnd.getDate() - 6); // prior Sunday
     const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     curName  = `${fmt(curStart)}–${fmt(weekEnd)}`;
     prevName = `${fmt(prevStart)}–${fmt(prevEnd)}`;
   }
 }
+  
   cache.cmp = cmp;
   cache.curName = curName;
   cache.prevName = prevName;
 
-  // Day label + colored amount pills (blue=current, red=previous)
-const xPills = cmp.labels.map((day, i) => {
-  const cur = cmp.current[i] ?? 0;
-  const prv = cmp.previous[i] ?? 0;
-  return {
-    day,
-    pills: [
-      { text: fmtMoney(cur), color: '#1a73e8' },
-      { text: fmtMoney(prv), color: '#d93025' }
-    ]
-  };
-});
+  // day label + colored amount pills (green=current, orange=previous)
+const xPills = cmp.labels.map((day, i) => ({
+  day,
+  pills: [
+    { text: fmtMoney(cmp.current[i] ?? 0),  color: '#188038' }, // green
+    { text: fmtMoney(cmp.previous[i] ?? 0), color: '#f29c1f' }  // orange
+  ]
+}));
 
 const compareLegend = document.getElementById('compareLegend');
 drawLineChart(
   compareCanvas,
   [
-    { name: curName,  data: cmp.current,  color: '#1a73e8' },
-    { name: prevName, data: cmp.previous, color: '#d93025' }
+    { name: curName,  data: cmp.current,  color: '#188038' }, // green
+    { name: prevName, data: cmp.previous, color: '#f29c1f' }  // orange
   ],
-  { xPills, legendEl: compareLegend, pad: { l: 52, r: 28, t: 10, b: 48 } }
+  { xPills, legendEl: compareLegend, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
 );
 
   // Top 10 items (unchanged)
@@ -332,27 +383,23 @@ window.addEventListener('resize', () => {
       { xLabelLines: weeklyLines }
     );
 
-    // compare pills
-const xPills = cache.cmp.labels.map((day, i) => {
-  const cur = cache.cmp.current[i] ?? 0;
-  const prv = cache.cmp.previous[i] ?? 0;
-  return {
-    day,
-    pills: [
-      { text: fmtMoney(cur), color: '#1a73e8' },
-      { text: fmtMoney(prv), color: '#d93025' }
-    ]
-  };
-});
+    // compare pills (green/orange) — rebuild on redraw
+const xPills = cache.cmp.labels.map((day, i) => ({
+  day,
+  pills: [
+    { text: fmtMoney(cache.cmp.current[i] ?? 0),  color: '#188038' },
+    { text: fmtMoney(cache.cmp.previous[i] ?? 0), color: '#f29c1f' }
+  ]
+}));
 
 const compareLegend = document.getElementById('compareLegend');
 drawLineChart(
   compareCanvas,
   [
-    { name: cache.curName,  data: cache.cmp.current,  color: '#1a73e8' },
-    { name: cache.prevName, data: cache.cmp.previous, color: '#d93025' }
+    { name: cache.curName,  data: cache.cmp.current,  color: '#188038' },
+    { name: cache.prevName, data: cache.cmp.previous, color: '#f29c1f' }
   ],
-  { xPills, legendEl: compareLegend, pad: { l: 52, r: 28, t: 10, b: 48 } }
+  { xPills, legendEl: compareLegend, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
 );
   });
 }, { passive:true });
