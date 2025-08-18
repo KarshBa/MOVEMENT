@@ -15,23 +15,26 @@ const compareCanvas = document.getElementById('compareChart');
 const weeklyLabels  = document.getElementById('weeklyLabels');
 const topTbody      = document.getElementById('top10Body');
 let cache = { weekly: null, cmp: null, curName: null, prevName: null };
+let rAFid = 0; // for resize redraw debounce
 
 function fmtMoney(n){ return new Intl.NumberFormat(undefined,{minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
 
 // very small line chart helper (auto y-bounds + end-of-line labels)
 function drawLineChart(canvas, seriesArr, options = {}) {
+  if (!canvas) return;                           // <-- guard: missing canvas
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;                              // <-- guard: no 2d context
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth  || canvas.width  || 600;
   const H = canvas.clientHeight || canvas.height || 300;
   canvas.width  = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
-
-  const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // crisp on HiDPI
   ctx.clearRect(0, 0, W, H);
 
   const fmtMoney = options.yFormatter || (n => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n));
-  const pad = options.pad || { l: 52, r: 14, t: 10, b: 26 };
+  const usingTwoLineX = options.xLabelLines && Array.isArray(options.xLabelLines);
+  const pad = options.pad || { l: 52, r: 14, t: 10, b: usingTwoLineX ? 38 : 26 };
   const plotW = Math.max(10, W - pad.l - pad.r);
   const plotH = Math.max(10, H - pad.t - pad.b);
 
@@ -223,14 +226,18 @@ async function run() {
   const cmp = await getJSON(`/api/dept-sales/compare?subdept=${encodeURIComponent(subdept)}`);
 
   // Build human week ranges from the server's Saturday (weekEnd)
-  const weekEnd = new Date(cmp.weekEnd);               // Saturday
-  const curStart = new Date(weekEnd); curStart.setDate(weekEnd.getDate() - 6);
-  const prevEnd  = new Date(weekEnd); prevEnd.setDate(weekEnd.getDate() - 7);
-  const prevStart= new Date(prevEnd); prevStart.setDate(prevEnd.getDate() - 6);
-  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-
-  const curName  = `${fmt(curStart)}–${fmt(weekEnd)}`;
-  const prevName = `${fmt(prevStart)}–${fmt(prevEnd)}`;
+let curName = 'Current Week', prevName = 'Previous Week'; // safe defaults
+if (cmp.weekEnd) {
+  const weekEnd = new Date(cmp.weekEnd); // Saturday
+  if (!Number.isNaN(weekEnd.getTime())) {
+    const curStart = new Date(weekEnd); curStart.setDate(weekEnd.getDate() - 6);
+    const prevEnd  = new Date(weekEnd); prevEnd.setDate(weekEnd.getDate() - 7);
+    const prevStart= new Date(prevEnd);  prevStart.setDate(prevEnd.getDate() - 6);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    curName  = `${fmt(curStart)}–${fmt(weekEnd)}`;
+    prevName = `${fmt(prevStart)}–${fmt(prevEnd)}`;
+  }
+}
   cache.cmp = cmp;
   cache.curName = curName;
   cache.prevName = prevName;
@@ -286,8 +293,10 @@ window.addEventListener('afterprint', () => {
     info.textContent = e.message || 'Failed to load data.';
   }
 
-  // only redraw with cache on resize (no refetch)
-  window.addEventListener('resize', () => {
+  // only redraw with cache on resize (no refetch) — debounced via rAF
+window.addEventListener('resize', () => {
+  if (rAFid) cancelAnimationFrame(rAFid);
+  rAFid = requestAnimationFrame(() => {
     if (!cache.weekly || !cache.cmp) return;
 
     // weekly two-line labels
@@ -317,5 +326,6 @@ window.addEventListener('afterprint', () => {
       ],
       { xLabelLines, legendEl: compareLegend }
     );
-  }, { passive:true });
+  });
+}, { passive:true });
 })();
