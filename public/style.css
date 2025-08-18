@@ -119,3 +119,5 @@ th.sortable[data-sort="desc"]::after { content: " ▼"; }
 #brandList.suggest-list {
   background: #fff !important;
 }
+.chart-wrap { position: relative; height: 320px; }
+canvas { width: 100%; height: 100%; display: block; }
