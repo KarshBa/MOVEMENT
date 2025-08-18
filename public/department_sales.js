@@ -58,6 +58,19 @@ function drawLineChart(canvas, seriesArr, options = {}) {
     max = max + padAmt;
   }
 
+  // Dynamically focus the vertical range around the top values.
+// e.g. yFocusFraction = 0.6 shows roughly the top 60% of the scale.
+if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFraction < 1 && Number.isFinite(max)) {
+  const dataMin = Math.min(...allVals);
+  const targetMin = Math.max(0, max - max * options.yFocusFraction); // e.g., 40% of top becomes baseline
+  // Ensure we still include the actual data min if it's above the targetMin (with a tiny pad)
+  if (targetMin > dataMin) {
+    min = Math.max(0, dataMin - Math.max(10, (max - dataMin) * 0.05));
+  } else {
+    min = targetMin;
+  }
+}
+
   // snap to "nice" ticks
   const tickCount = 5;
   const rawStep = (max - min) / tickCount;
@@ -260,6 +273,9 @@ function escapeHtml(s){
 async function run() {
   info.textContent = '';
   const subdept = sel.value || 'all';
+  // update printed sub-department header if present
+  const selText = sel.options[sel.selectedIndex]?.textContent || 'All Departments';
+  document.getElementById('printSubdept')?.textContent = selText;
 
   // Meta for week ranges
   const meta = await getJSON('/api/dept-sales/meta');
@@ -269,17 +285,26 @@ async function run() {
   const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
   cache.weekly = weekly;
 
-  // line1: compact range (trim year from each side), line2: $ amount
-  const shortRanges = (weekly.labels || []).map(s => {
-    const [a, b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
-  });
-  const weeklyLines = shortRanges.map((range, i) => [range, fmtMoney(weekly.points[i] || 0)]);
+  // compact Sun–Sat label + green pill amount
+const weeklyXPills = (weekly.labels || []).map((s, i) => {
+  const [a, b] = String(s).split('–');
+  const rangeShort = (a && b) ? `${a.slice(5)}–${b.slice(5)}` : s;
+  return {
+    day: rangeShort,
+    pills: [{ text: fmtMoney(weekly.points[i] || 0), color: '#188038' }]
+  };
+});
 
-  drawLineChart(
-    weeklyCanvas,
-    [{ name: 'Weekly Sales', data: weekly.points }],
-    { xLabelLines: weeklyLines }
-  );
+drawLineChart(
+  weeklyCanvas,
+  [{ name: 'Weekly Sales', data: weekly.points, color: '#188038' }],
+  {
+    xPills: weeklyXPills,
+    yFocusFraction: 0.6,              // dynamic vertical zoom
+    endGap: 12,
+    pad: { l: 52, r: 36, t: 10, b: 48 }
+  }
+);
 
     // If you still want the long labels elsewhere:
   if (weeklyLabels) weeklyLabels.textContent = weekly.labels.join('   |   ');
@@ -372,16 +397,25 @@ window.addEventListener('resize', () => {
   rAFid = requestAnimationFrame(() => {
     if (!cache.weekly || !cache.cmp) return;
 
-    // weekly two-line labels
-    const shortRanges = (cache.weekly.labels || []).map(s => {
-      const [a,b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
-    });
-    const weeklyLines = shortRanges.map((r, i) => [r, fmtMoney(cache.weekly.points[i] || 0)]);
-    drawLineChart(
-      weeklyCanvas,
-      [{ name:'Weekly Sales', data: cache.weekly.points }],
-      { xLabelLines: weeklyLines }
-    );
+    // weekly green pills
+const weeklyXPills = (cache.weekly.labels || []).map((s, i) => {
+  const [a,b] = String(s).split('–');
+  const rangeShort = (a && b) ? `${a.slice(5)}–${b.slice(5)}` : s;
+  return {
+    day: rangeShort,
+    pills: [{ text: fmtMoney(cache.weekly.points[i] || 0), color: '#188038' }]
+  };
+});
+drawLineChart(
+  weeklyCanvas,
+  [{ name: 'Weekly Sales', data: cache.weekly.points, color: '#188038' }],
+  {
+    xPills: weeklyXPills,
+    yFocusFraction: 0.6,
+    endGap: 12,
+    pad: { l: 52, r: 36, t: 10, b: 48 }
+  }
+);
 
     // compare pills (green/orange) — rebuild on redraw
 const xPills = cache.cmp.labels.map((day, i) => ({
@@ -396,10 +430,10 @@ const compareLegend = document.getElementById('compareLegend');
 drawLineChart(
   compareCanvas,
   [
-    { name: cache.curName,  data: cache.cmp.current,  color: '#188038' },
-    { name: cache.prevName, data: cache.cmp.previous, color: '#f29c1f' }
+    { name: curName,  data: cmp.current,  color: '#188038' }, // green
+    { name: prevName, data: cmp.previous, color: '#f29c1f' }  // orange
   ],
-  { xPills, legendEl: compareLegend, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
+  { xPills, legendEl: compareLegend, yFocusFraction: 0.6, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
 );
   });
 }, { passive:true });
