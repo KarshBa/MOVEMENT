@@ -14,7 +14,7 @@ const weeklyCanvas  = document.getElementById('weeklyChart');
 const compareCanvas = document.getElementById('compareChart');
 const weeklyLabels  = document.getElementById('weeklyLabels');
 const topTbody      = document.getElementById('top10Body');
-let cache = { weekly: null, cmp: null, labels: null };
+let cache = { weekly: null, cmp: null, curName: null, prevName: null };
 
 function fmtMoney(n){ return new Intl.NumberFormat(undefined,{minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
 
@@ -95,11 +95,21 @@ function drawLineChart(canvas, seriesArr, options = {}) {
     ctx.fillText(fmtMoney(v), 6, y);
   }
 
-  // x labels if given
-  if (options.xLabels && options.xLabels.length === n) {
+    // x labels (supports single-line or two-line)
+  if (options.xLabelLines && options.xLabelLines.length === n) {
     ctx.fillStyle = '#5f6368';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
+    ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+    for (let i = 0; i < n; i++) {
+      const x = xPos(i);
+      const [l1, l2] = options.xLabelLines[i];
+      // first line a bit above bottom, second line at bottom
+      ctx.fillText(l1, x, H - 18);
+      ctx.fillText(l2, x, H - 4);
+    }
+  } else if (options.xLabels && options.xLabels.length === n) {
+    ctx.fillStyle = '#5f6368';
+    ctx.textAlign = 'center';
     ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
     for (let i = 0; i < n; i++) {
       const x = xPos(i);
@@ -190,28 +200,56 @@ async function run() {
   const meta = await getJSON('/api/dept-sales/meta');
   wkEndEl.textContent = meta.lastWeekEnd || '—';
 
-  // Weekly 5 — store in cache and draw
-  cache.weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
-  const shortLabels = (cache.weekly.labels || []).map(s => {
-    const [a, b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`; // "MM-DD–MM-DD"
+    // Weekly 5
+  const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
+  cache.weekly = weekly;
+
+  // line1: compact range (trim year from each side), line2: $ amount
+  const shortRanges = (weekly.labels || []).map(s => {
+    const [a, b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
   });
+  const weeklyLines = shortRanges.map((range, i) => [range, fmtMoney(weekly.points[i] || 0)]);
+
   drawLineChart(
     weeklyCanvas,
-    [{ name: 'Weekly Sales', data: cache.weekly.points }],
-    { xLabels: shortLabels }
+    [{ name: 'Weekly Sales', data: weekly.points }],
+    { xLabelLines: weeklyLines }
   );
-  weeklyLabels.textContent = cache.weekly.labels.join('   |   ');
 
-  // Compare current vs previous — store in cache and draw (with legend)
-  cache.cmp = await getJSON(`/api/dept-sales/compare?subdept=${encodeURIComponent(subdept)}`);
-  const compareLegend = document.getElementById('compareLegend');
+    // If you still want the long labels elsewhere:
+  if (weeklyLabels) weeklyLabels.textContent = weekly.labels.join('   |   ');
+
+    // Compare current vs previous — fetch first, then draw ONCE
+  const cmp = await getJSON(`/api/dept-sales/compare?subdept=${encodeURIComponent(subdept)}`);
+
+  // Build human week ranges from the server's Saturday (weekEnd)
+  const weekEnd = new Date(cmp.weekEnd);               // Saturday
+  const curStart = new Date(weekEnd); curStart.setDate(weekEnd.getDate() - 6);
+  const prevEnd  = new Date(weekEnd); prevEnd.setDate(weekEnd.getDate() - 7);
+  const prevStart= new Date(prevEnd); prevStart.setDate(prevEnd.getDate() - 6);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  const curName  = `${fmt(curStart)}–${fmt(weekEnd)}`;
+  const prevName = `${fmt(prevStart)}–${fmt(prevEnd)}`;
+  cache.cmp = cmp;
+  cache.curName = curName;
+  cache.prevName = prevName;
+
+  // Two-line X labels: day on top, money "current / previous" on bottom
+  const xLabelLines = cmp.labels.map((day, i) => {
+    const cur = cmp.current[i] ?? 0;
+    const prv = cmp.previous[i] ?? 0;
+    return [day, `${fmtMoney(cur)} / ${fmtMoney(prv)}`];
+  });
+
+  const compareLegend = document.getElementById('compareLegend'); // optional legend container
   drawLineChart(
     compareCanvas,
     [
-      { name: 'Current Week',  data: cache.cmp.current,  color: '#1a73e8' },
-      { name: 'Previous Week', data: cache.cmp.previous, color: '#d93025' }
+      { name: curName,  data: cmp.current,  color: '#1a73e8' },
+      { name: prevName, data: cmp.previous, color: '#d93025' }
     ],
-    { xLabels: cache.cmp.labels, legendEl: compareLegend }
+    { xLabelLines, legendEl: compareLegend }
   );
 
   // Top 10 items (unchanged)
@@ -241,26 +279,32 @@ btn.addEventListener('click', run);
 window.addEventListener('resize', () => {
   if (!cache.weekly || !cache.cmp) return;
 
-  const shortLabels = (cache.weekly.labels || []).map(s => {
-    const [a, b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
+  // weekly two-line labels
+  const shortRanges = (cache.weekly.labels || []).map(s => {
+    const [a,b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
   });
-
-  // redraw weekly with cached data
+  const weeklyLines = shortRanges.map((r, i) => [r, fmtMoney(cache.weekly.points[i] || 0)]);
   drawLineChart(
     weeklyCanvas,
-    [{ name: 'Weekly Sales', data: cache.weekly.points }],
-    { xLabels: shortLabels }
+    [{ name:'Weekly Sales', data: cache.weekly.points }],
+    { xLabelLines: weeklyLines }
   );
 
-  // redraw compare with cached data
+  // compare two-line labels
+  const xLabelLines = cache.cmp.labels.map((day, i) => {
+    const cur = cache.cmp.current[i] ?? 0;
+    const prv = cache.cmp.previous[i] ?? 0;
+    return [day, `${fmtMoney(cur)} / ${fmtMoney(prv)}`];
+  });
+
   const compareLegend = document.getElementById('compareLegend');
   drawLineChart(
     compareCanvas,
     [
-      { name: 'Current Week',  data: cache.cmp.current,  color: '#1a73e8' },
-      { name: 'Previous Week', data: cache.cmp.previous, color: '#d93025' }
+      { name: cache.curName,  data: cache.cmp.current,  color: '#1a73e8' },
+      { name: cache.prevName, data: cache.cmp.previous, color: '#d93025' }
     ],
-    { xLabels: cache.cmp.labels, legendEl: compareLegend }
+    { xLabelLines, legendEl: compareLegend }
   );
-}, { passive: true });
+}, { passive:true });
   })();
