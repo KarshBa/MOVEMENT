@@ -17,26 +17,57 @@ const topTbody      = document.getElementById('top10Body');
 
 function fmtMoney(n){ return new Intl.NumberFormat(undefined,{minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
 
-// very small line chart helper
-function drawLineChart(canvas, seriesArr, options={}) {
+// very small line chart helper (auto y-bounds + end-of-line labels)
+function drawLineChart(canvas, seriesArr, options = {}) {
   const dpr = window.devicePixelRatio || 1;
-  const W = canvas.clientWidth  || canvas.width;
-  const H = canvas.clientHeight || canvas.height;
+  const W = canvas.clientWidth  || canvas.width  || 600;
+  const H = canvas.clientHeight || canvas.height || 300;
   canvas.width  = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
 
   const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0,0,W,H);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // crisp on HiDPI
+  ctx.clearRect(0, 0, W, H);
 
-  const pad = { l: 44, r: 12, t: 10, b: 26 };
-  const plotW = W - pad.l - pad.r, plotH = H - pad.t - pad.b;
+  const fmtMoney = options.yFormatter || (n => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n));
+  const pad = options.pad || { l: 52, r: 14, t: 10, b: 26 };
+  const plotW = Math.max(10, W - pad.l - pad.r);
+  const plotH = Math.max(10, H - pad.t - pad.b);
 
-  const allY = seriesArr.flatMap(s => s.data);
-  const yMax = Math.max(1, Math.ceil(Math.max(...allY, 0) / 100) * 100);
-  const yMin = 0;
+  const n = seriesArr[0]?.data?.length || 0;
+  const allVals = seriesArr.flatMap(s => (s.data || []).filter(v => Number.isFinite(v)));
+  let min = Math.min(...allVals, 0), max = Math.max(...allVals, 0);
 
-  // axes
+  // handle all-zero or single-value cases
+  if (!allVals.length) { min = 0; max = 1; }
+  if (min === max) {
+    const padAbs = Math.max(10, max * 0.1);
+    min = Math.max(0, max - padAbs);
+    max = max + padAbs;
+  } else {
+    // add ~10% padding
+    const range = max - min;
+    const padAmt = Math.max(10, range * 0.1);
+    min = Math.max(0, min - padAmt);
+    max = max + padAmt;
+  }
+
+  // snap to "nice" ticks
+  const tickCount = 5;
+  const rawStep = (max - min) / tickCount;
+  const nice = niceStep(rawStep);
+  min = Math.floor(min / nice) * nice;
+  max = Math.ceil(max / nice) * nice;
+
+  function xPos(i) {
+    return pad.l + (n <= 1 ? plotW / 2 : (plotW * (i / (n - 1))));
+  }
+  function yPos(v) {
+    const t = (v - min) / (max - min || 1);
+    return pad.t + (1 - t) * plotH;
+  }
+
+  // axes + grid
   ctx.strokeStyle = '#e0e0e0';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -45,52 +76,97 @@ function drawLineChart(canvas, seriesArr, options={}) {
   ctx.lineTo(pad.l + plotW, pad.t + plotH);
   ctx.stroke();
 
-  // y ticks (4)
+  // y ticks
   ctx.fillStyle = '#5f6368';
   ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
-  for (let i=0;i<=4;i++){
-    const v = yMin + (yMax - yMin)*i/4;
-    const y = pad.t + plotH - (v - yMin) * plotH / (yMax - yMin);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  for (let v = min; v <= max + 1e-9; v += nice) {
+    const y = yPos(v);
+    // light grid line
     ctx.strokeStyle = '#f1f3f4';
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l+plotW, y); ctx.stroke();
-    ctx.fillText(fmtMoney(v), 4, y+4);
-  }
-
-  const n = seriesArr[0]?.data.length || 0;
-
-  function xPos(i){ return pad.l + (n<=1 ? plotW/2 : (plotW*(i/(n-1)))); }
-  function yPos(v){ return pad.t + plotH - (v - yMin) * plotH / (yMax - yMin); }
-
-  // draw series
-  const palette = options.palette || ['#1a73e8', '#d93025'];
-  seriesArr.forEach((s, idx) => {
-    const color = s.color || palette[idx % palette.length];
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
     ctx.beginPath();
-    s.data.forEach((v, i) => {
-      const x = xPos(i), y = yPos(v);
-      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    });
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(pad.l + plotW, y);
     ctx.stroke();
-
-    // points
-    ctx.fillStyle = color;
-    s.data.forEach((v,i)=>{
-      const x=xPos(i), y=yPos(v);
-      ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2); ctx.fill();
-    });
-  });
+    // tick label
+    ctx.fillText(fmtMoney(v), 6, y);
+  }
 
   // x labels if given
   if (options.xLabels && options.xLabels.length === n) {
     ctx.fillStyle = '#5f6368';
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
     ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
-    options.xLabels.forEach((lab, i) => {
+    for (let i = 0; i < n; i++) {
       const x = xPos(i);
-      ctx.fillText(lab, x, H - 4);
+      ctx.fillText(options.xLabels[i], x, H - 4);
+    }
+  }
+
+  // draw series
+  const palette = options.palette || ['#1a73e8', '#d93025', '#188038', '#f29c1f'];
+  seriesArr.forEach((s, idx) => {
+    const color = s.color || palette[idx % palette.length];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    (s.data || []).forEach((v, i) => {
+      const x = xPos(i), y = yPos(v);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
+    ctx.stroke();
+
+    // points
+    ctx.fillStyle = color;
+    (s.data || []).forEach((v, i) => {
+      const x = xPos(i), y = yPos(v);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // end-of-line label
+    if (options.endLabels !== false) {
+      // find last finite point
+      for (let i = (s.data?.length || 0) - 1; i >= 0; i--) {
+        const v = s.data[i];
+        if (Number.isFinite(v)) {
+          const x = xPos(i), y = yPos(v);
+          ctx.fillStyle = color;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+          const label = s.name || `Series ${idx + 1}`;
+          ctx.fillText(` ${label}`, x + 8, y);
+          break;
+        }
+      }
+    }
+  });
+
+  // optional HTML legend target
+  if (options.legendEl) {
+    options.legendEl.innerHTML = seriesArr.map((s, idx) => {
+      const c = s.color || palette[idx % palette.length];
+      return `<span style="display:inline-flex;align-items:center;margin-right:12px;">
+        <span style="width:12px;height:12px;background:${c};display:inline-block;border-radius:2px;margin-right:6px;"></span>
+        ${escapeHtml(s.name || `Series ${idx + 1}`)}
+      </span>`;
+    }).join('');
+  }
+
+  function niceStep(step) {
+    const pow10 = Math.pow(10, Math.floor(Math.log10(step || 1)));
+    const n = step / pow10;
+    let m;
+    if (n <= 1) m = 1;
+    else if (n <= 2) m = 2;
+    else if (n <= 5) m = 5;
+    else m = 10;
+    return m * pow10;
   }
 }
 
@@ -116,7 +192,32 @@ async function run() {
   // Weekly 5
   const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
   const shortLabels = (weekly.labels || []).map(s => s.slice(5)); // "MM-DD–YYYY-MM-DD" -> trim year start for compactness
-  drawLineChart(weeklyCanvas, [{ name:'Sales', data: weekly.points }], { xLabels: shortLabels });
+  
+  // Weekly 5 (unchanged call; gets y auto-fit now)
+drawLineChart(
+  weeklyCanvas,
+  [{ name: 'Weekly Sales', data: weekly.points }],
+  { xLabels: shortLabels }
+);
+
+// Compare current vs previous (labels drawn at line ends)
+drawLineChart(
+  compareCanvas,
+  [
+    { name:'Current Week',  data: cmp.current,  color:'#1a73e8' },
+    { name:'Previous Week', data: cmp.previous, color:'#d93025' }
+  ],
+  { xLabels: cmp.labels }  // end labels are on by default
+);
+
+  const compareLegend = document.getElementById('compareLegend');
+drawLineChart(compareCanvas,
+  [
+    { name:'Current Week',  data: cmp.current,  color:'#1a73e8' },
+    { name:'Previous Week', data: cmp.previous, color:'#d93025' }
+  ],
+  { xLabels: cmp.labels, legendEl: compareLegend }
+);
 
   weeklyLabels.textContent = weekly.labels.join('   |   ');
 
