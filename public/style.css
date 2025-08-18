@@ -162,3 +162,14 @@ canvas { width: 100%; height: 100%; display: block; }
   /* Optional: show the compare legend inline to save space */
   #compareLegend { margin-top: 2mm; }
 }
+.print-only {
+  display: none;
+  font-size: 1.8rem;
+  margin: 1rem 0;
+  text-align: center;
+  font-weight: bold;
+}
+
+@media print {
+  .print-only { display: block; }
+}
