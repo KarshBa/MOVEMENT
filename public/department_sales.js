@@ -256,7 +256,7 @@ if (cmp.weekEnd) {
       { name: curName,  data: cmp.current,  color: '#1a73e8' },
       { name: prevName, data: cmp.previous, color: '#d93025' }
     ],
-    { xLabelLines, legendEl: compareLegend }
+    { xLabelLines, legendEl: compareLegend, pad: { l: 52, r: 28, t: 10, b: 26 } }
   );
 
   // Top 10 items (unchanged)
