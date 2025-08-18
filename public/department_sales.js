@@ -228,7 +228,7 @@ async function run() {
 
 btn.addEventListener('click', run);
 
-async function init(){
+(async function init(){
   try {
     await loadSubdepts();
     // auto-run default (All Departments)
@@ -263,3 +263,4 @@ window.addEventListener('resize', () => {
     { xLabels: cache.cmp.labels, legendEl: compareLegend }
   );
 }, { passive: true });
+  })();
