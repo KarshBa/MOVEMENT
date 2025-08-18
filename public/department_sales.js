@@ -269,42 +269,41 @@ btn.addEventListener('click', run);
 (async function init(){
   try {
     await loadSubdepts();
-    // auto-run default (All Departments)
     await run();
   } catch (e) {
     info.textContent = e.message || 'Failed to load data.';
   }
 
   // only redraw with cache on resize (no refetch)
-window.addEventListener('resize', () => {
-  if (!cache.weekly || !cache.cmp) return;
+  window.addEventListener('resize', () => {
+    if (!cache.weekly || !cache.cmp) return;
 
-  // weekly two-line labels
-  const shortRanges = (cache.weekly.labels || []).map(s => {
-    const [a,b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
-  });
-  const weeklyLines = shortRanges.map((r, i) => [r, fmtMoney(cache.weekly.points[i] || 0)]);
-  drawLineChart(
-    weeklyCanvas,
-    [{ name:'Weekly Sales', data: cache.weekly.points }],
-    { xLabelLines: weeklyLines }
-  );
+    // weekly two-line labels
+    const shortRanges = (cache.weekly.labels || []).map(s => {
+      const [a,b] = s.split('–'); return `${a.slice(5)}–${b.slice(5)}`;
+    });
+    const weeklyLines = shortRanges.map((r, i) => [r, fmtMoney(cache.weekly.points[i] || 0)]);
+    drawLineChart(
+      weeklyCanvas,
+      [{ name:'Weekly Sales', data: cache.weekly.points }],
+      { xLabelLines: weeklyLines }
+    );
 
-  // compare two-line labels
-  const xLabelLines = cache.cmp.labels.map((day, i) => {
-    const cur = cache.cmp.current[i] ?? 0;
-    const prv = cache.cmp.previous[i] ?? 0;
-    return [day, `${fmtMoney(cur)} / ${fmtMoney(prv)}`];
-  });
+    // compare two-line labels
+    const xLabelLines = cache.cmp.labels.map((day, i) => {
+      const cur = cache.cmp.current[i] ?? 0;
+      const prv = cache.cmp.previous[i] ?? 0;
+      return [day, `${fmtMoney(cur)} / ${fmtMoney(prv)}`];
+    });
 
-  const compareLegend = document.getElementById('compareLegend');
-  drawLineChart(
-    compareCanvas,
-    [
-      { name: cache.curName,  data: cache.cmp.current,  color: '#1a73e8' },
-      { name: cache.prevName, data: cache.cmp.previous, color: '#d93025' }
-    ],
-    { xLabelLines, legendEl: compareLegend }
-  );
-}, { passive:true });
-  })();
+    const compareLegend = document.getElementById('compareLegend');
+    drawLineChart(
+      compareCanvas,
+      [
+        { name: cache.curName,  data: cache.cmp.current,  color: '#1a73e8' },
+        { name: cache.prevName, data: cache.cmp.previous, color: '#d93025' }
+      ],
+      { xLabelLines, legendEl: compareLegend }
+    );
+  }, { passive:true });
+})();
