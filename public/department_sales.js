@@ -275,7 +275,8 @@ async function run() {
   const subdept = sel.value || 'all';
   // update printed sub-department header if present
   const selText = sel.options[sel.selectedIndex]?.textContent || 'All Departments';
-  document.getElementById('printSubdept')?.textContent = selText;
+  const printEl = document.getElementById('printSubdept');
+  if (printEl) printEl.textContent = selText;
 
   // Meta for week ranges
   const meta = await getJSON('/api/dept-sales/meta');
