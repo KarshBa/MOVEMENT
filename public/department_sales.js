@@ -376,11 +376,16 @@ document.getElementById('btnPrint')?.addEventListener('click', () => {
   window.print();
 });
 
-// Ensure charts reflow crisply when entering/exiting print
+// Ensure charts expand & reflow crisply for print, then reset
 window.addEventListener('beforeprint', () => {
+  weeklyCanvas.style.height = '360px';
+  compareCanvas.style.height = '360px';
   window.dispatchEvent(new Event('resize'));
 });
+
 window.addEventListener('afterprint', () => {
+  weeklyCanvas.style.height = '';
+  compareCanvas.style.height = '';
   window.dispatchEvent(new Event('resize'));
 });
 
@@ -431,10 +436,10 @@ const compareLegend = document.getElementById('compareLegend');
 drawLineChart(
   compareCanvas,
   [
-    { name: curName,  data: cmp.current,  color: '#188038' }, // green
-    { name: prevName, data: cmp.previous, color: '#f29c1f' }  // orange
+    { name: cache.curName,  data: cache.cmp.current,  color: '#188038' },
+    { name: cache.prevName, data: cache.cmp.previous, color: '#f29c1f' }
   ],
-  { xPills, legendEl: compareLegend, yFocusFraction: 0.6, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
+  { xPills, legendEl: compareLegend, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
 );
   });
 }, { passive:true });
