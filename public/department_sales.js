@@ -102,6 +102,7 @@ if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFracti
   // y ticks
   ctx.fillStyle = '#5f6368';
   const labelFont = (isPrinting ? '11px' : '12px') + ' system-ui, -apple-system, Segoe UI, Arial';
+  ctx.font = labelFont;               // ← apply for Y-axis ticks
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
@@ -121,7 +122,7 @@ if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFracti
 if (options.xPills && options.xPills.length === n) {
   ctx.fillStyle = '#5f6368';
   ctx.textAlign = 'center';
-  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  ctx.font = labelFont;
   for (let i = 0; i < n; i++) {
     const x = xPos(i);
     const item = options.xPills[i]; // { day: 'Mon', pills: [{text, color}, ...] }
@@ -135,7 +136,7 @@ if (options.xPills && options.xPills.length === n) {
       drawPill(ctx, x, H - 6, pills[0].text, pills[0].color);
     } else if (pills.length === 2) {
       const gap = 8;
-      ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+      ctx.font = labelFont;
       const widthFor = (t) => Math.ceil(ctx.measureText(t).width) + 12; // padH*2
       const w0 = widthFor(pills[0].text);
       const w1 = widthFor(pills[1].text);
@@ -151,7 +152,7 @@ if (options.xPills && options.xPills.length === n) {
   ctx.fillStyle = '#5f6368';
 ctx.textAlign = 'center';
 ctx.textBaseline = 'alphabetic'; // ensure consistent placement at bottom edge
-ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+ctx.font = labelFont;
 for (let i = 0; i < n; i++) {
   const x = xPos(i);
   const [l1, l2] = options.xLabelLines[i];
@@ -161,7 +162,7 @@ for (let i = 0; i < n; i++) {
 } else if (options.xLabels && options.xLabels.length === n) {
   ctx.fillStyle = '#5f6368';
   ctx.textAlign = 'center';
-  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  ctx.font = labelFont;
   for (let i = 0; i < n; i++) {
     const x = xPos(i);
     ctx.fillText(options.xLabels[i], x, H - 4);
@@ -202,7 +203,7 @@ seriesArr.forEach((s, idx) => {
         ctx.fillStyle = color;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+        ctx.font = labelFont;
         const label = s.name || `Series ${idx + 1}`;
         ctx.fillText(` ${label}`, x + 8, y);
         break;
@@ -236,7 +237,7 @@ seriesArr.forEach((s, idx) => {
 
 function drawPill(ctx, xCenter, yBaseline, text, bg) {
   const padH = 6, padV = 3, radius = 6;
-  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  ctx.font = (isPrinting ? '11px' : '12px') + ' system-ui, -apple-system, Segoe UI, Arial';
   const w = Math.ceil(ctx.measureText(text).width) + padH * 2;
   const h = 18;
   const x = Math.round(xCenter - w / 2);
