@@ -63,7 +63,7 @@ function drawLineChart(canvas, seriesArr, options = {}) {
   // Dynamically focus the vertical range around the top values.
 // e.g. yFocusFraction = 0.6 shows roughly the top 60% of the scale.
 if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFraction < 1 && Number.isFinite(max)) {
-  const dataMin = Math.min(...allVals);
+  const dataMin = allVals.length ? Math.min(...allVals) : 0;
   const targetMin = Math.max(0, max - max * options.yFocusFraction); // e.g., 40% of top becomes baseline
   // Ensure we still include the actual data min if it's above the targetMin (with a tiny pad)
   if (targetMin > dataMin) {
@@ -75,7 +75,8 @@ if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFracti
 
   // snap to "nice" ticks
   const tickCount = 5;
-  const rawStep = (max - min) / tickCount;
+  const span = Math.max(1, max - min);      // avoid 0 / tiny spans
+  const rawStep = span / tickCount;
   const nice = niceStep(rawStep);
   min = Math.floor(min / nice) * nice;
   max = Math.ceil(max / nice) * nice;
