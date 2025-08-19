@@ -121,8 +121,10 @@ if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFracti
 
    // X labels: supports three modes — xPills (day + colored pills), two-line, or single-line
 if (options.xPills && options.xPills.length === n) {
+  const m = Math.min(n, options.xPills.length);
   ctx.fillStyle = '#5f6368';
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';   // <-- ensures consistent bottom alignment
   ctx.font = labelFont;
   for (let i = 0; i < n; i++) {
     const x = xPos(i);
@@ -308,7 +310,7 @@ drawLineChart(
     xPills: weeklyXPills,
     yFocusFraction: 0.6,
     endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 64 }
+    pad: { l: 56, r: 40, t: 12, b: 72 }
   }
 );
 
@@ -381,19 +383,34 @@ document.getElementById('btnPrint')?.addEventListener('click', () => {
   window.print();
 });
 
-// Ensure charts expand & reflow crisply for print, then reset
+function setChartWrapHeightsForPrint() {
+  // lock ~3:2 ratio so text isn’t squished
+  const ratio = 2 / 3; // H = W * ratio (≈0.666)
+  [weeklyCanvas, compareCanvas].forEach(c => {
+    const wrap = c?.closest('.chart-wrap');
+    if (!wrap) return;
+    const w = wrap.clientWidth || c.clientWidth || 600;
+    wrap.style.height = Math.round(w * ratio) + 'px';
+  });
+}
+
+function clearChartWrapHeights() {
+  [weeklyCanvas, compareCanvas].forEach(c => {
+    const wrap = c?.closest('.chart-wrap');
+    if (wrap) wrap.style.height = '';
+  });
+}
+
 window.addEventListener('beforeprint', () => {
-  isPrinting = true; // <<— IMPORTANT: force DPR=1 & extra bottom pad
-  weeklyCanvas.style.height = '360px';
-  compareCanvas.style.height = '360px';
-  window.dispatchEvent(new Event('resize'));
+  isPrinting = true;            // draw with DPR=1 for crisp print text
+  setChartWrapHeightsForPrint(); // size wrappers (not canvas) -> no canvas CSS scaling
+  window.dispatchEvent(new Event('resize')); // redraw at new size
 });
 
 window.addEventListener('afterprint', () => {
-  isPrinting = false; // <<— restore screen DPR
-  weeklyCanvas.style.height = '';
-  compareCanvas.style.height = '';
-  window.dispatchEvent(new Event('resize'));
+  isPrinting = false;
+  clearChartWrapHeights();
+  window.dispatchEvent(new Event('resize')); // redraw back to screen size
 });
 
 (async function init(){
@@ -427,7 +444,7 @@ drawLineChart(
     xPills: weeklyXPills,
     yFocusFraction: 0.6,
     endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 64 }
+    pad: { l: 56, r: 40, t: 12, b: 72 }
   }
 );
 
