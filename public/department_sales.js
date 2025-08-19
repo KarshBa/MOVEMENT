@@ -15,7 +15,8 @@ const compareCanvas = document.getElementById('compareChart');
 const weeklyLabels  = document.getElementById('weeklyLabels');
 const topTbody      = document.getElementById('top10Body');
 let cache = { weekly: null, cmp: null, curName: null, prevName: null };
-let rAFid = 0; // for resize redraw debounce
+let rAFid = 0;
+let isPrinting = false;
 
 function fmtMoney(n){ return new Intl.NumberFormat(undefined,{minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
 
@@ -24,18 +25,19 @@ function drawLineChart(canvas, seriesArr, options = {}) {
   if (!canvas) return;                           // <-- guard: missing canvas
   const ctx = canvas.getContext('2d');
   if (!ctx) return;                              // <-- guard: no 2d context
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = (options.dpr != null) ? options.dpr : (isPrinting ? 1 : (window.devicePixelRatio || 1));
   const W = canvas.clientWidth  || canvas.width  || 600;
   const H = canvas.clientHeight || canvas.height || 300;
   canvas.width  = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // crisp on HiDPI
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // crisp on screen; DPR=1 on print
   ctx.clearRect(0, 0, W, H);
 
   const fmtMoney = options.yFormatter || (n => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n));
   const usingTwoLineX = options.xLabelLines && Array.isArray(options.xLabelLines);
   const usingPills   = options.xPills && Array.isArray(options.xPills);
-  const pad = options.pad || { l: 52, r: 36, t: 10, b: (usingTwoLineX || options.xPills) ? 44 : 26 };
+  const defaultBottom = (usingTwoLineX || usingPills) ? (isPrinting ? 56 : 44) : 26;
+  const pad = options.pad || { l: 52, r: 36, t: 10, b: defaultBottom };
   const plotW = Math.max(10, W - pad.l - pad.r);
   const plotH = Math.max(10, H - pad.t - pad.b);
   const endGap = options.endGap ?? 12;
@@ -147,13 +149,14 @@ if (options.xPills && options.xPills.length === n) {
   }
 } else if (options.xLabelLines && options.xLabelLines.length === n) {
   ctx.fillStyle = '#5f6368';
-  ctx.textAlign = 'center';
-  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
-  for (let i = 0; i < n; i++) {
-    const x = xPos(i);
-    const [l1, l2] = options.xLabelLines[i];
-    ctx.fillText(l1, x, H - 18);
-    ctx.fillText(l2, x, H - 4);
+ctx.textAlign = 'center';
+ctx.textBaseline = 'alphabetic'; // ensure consistent placement at bottom edge
+ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+for (let i = 0; i < n; i++) {
+  const x = xPos(i);
+  const [l1, l2] = options.xLabelLines[i];
+  ctx.fillText(l1, x, H - 18);
+  ctx.fillText(l2, x, H - 4);
   }
 } else if (options.xLabels && options.xLabels.length === n) {
   ctx.fillStyle = '#5f6368';
@@ -378,12 +381,14 @@ document.getElementById('btnPrint')?.addEventListener('click', () => {
 
 // Ensure charts expand & reflow crisply for print, then reset
 window.addEventListener('beforeprint', () => {
+  isPrinting = true; // <<— IMPORTANT: force DPR=1 & extra bottom pad
   weeklyCanvas.style.height = '360px';
   compareCanvas.style.height = '360px';
   window.dispatchEvent(new Event('resize'));
 });
 
 window.addEventListener('afterprint', () => {
+  isPrinting = false; // <<— restore screen DPR
   weeklyCanvas.style.height = '';
   compareCanvas.style.height = '';
   window.dispatchEvent(new Event('resize'));
