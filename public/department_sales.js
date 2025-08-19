@@ -120,7 +120,12 @@ if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFracti
   }
 
    // X labels: supports three modes — xPills (day + colored pills), two-line, or single-line
-if (options.xPills && options.xPills.length === n) {
+if (options.xPills && options.xPills.length) {
+  const m = Math.min(n, options.xPills.length);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = labelFont;
+  for (let i = 0; i < m; i++) {
   const m = Math.min(n, options.xPills.length);
   ctx.fillStyle = '#5f6368';
   ctx.textAlign = 'center';
@@ -129,6 +134,8 @@ if (options.xPills && options.xPills.length === n) {
   for (let i = 0; i < n; i++) {
     const x = xPos(i);
     const item = options.xPills[i]; // { day: 'Mon', pills: [{text, color}, ...] }
+    if (!item) continue;
+    ctx.fillStyle = '#5f6368'; // re-assert after previous pill drawing
 
     // day label above pills
     ctx.fillText(item.day || '', x, H - 30);
@@ -239,6 +246,7 @@ seriesArr.forEach((s, idx) => {
 }
 
 function drawPill(ctx, xCenter, yBaseline, text, bg) {
+  ctx.save();
   const padH = 6, padV = 3, radius = 6;
   ctx.font = (isPrinting ? '11px' : '12px') + ' system-ui, -apple-system, Segoe UI, Arial';
   const w = Math.ceil(ctx.measureText(text).width) + padH * 2;
@@ -264,6 +272,7 @@ function drawPill(ctx, xCenter, yBaseline, text, bg) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x + w / 2, y + h / 2 + 0.5);
+  ctx.restore();
 }
 
 async function loadSubdepts() {
