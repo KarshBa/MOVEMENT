@@ -101,7 +101,7 @@ if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFracti
 
   // y ticks
   ctx.fillStyle = '#5f6368';
-  ctx.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  const labelFont = (isPrinting ? '11px' : '12px') + ' system-ui, -apple-system, Segoe UI, Arial';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
@@ -291,8 +291,8 @@ async function run() {
 
   // compact Sun–Sat label + green pill amount
 const weeklyXPills = (weekly.labels || []).map((s, i) => {
-  const [a, b] = String(s).split('–');
-  const rangeShort = (a && b) ? `${a.slice(5)}–${b.slice(5)}` : s;
+  const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
+  const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
   return {
     day: rangeShort,
     pills: [{ text: fmtMoney(weekly.points[i] || 0), color: '#188038' }]
@@ -304,9 +304,9 @@ drawLineChart(
   [{ name: 'Weekly Sales', data: weekly.points, color: '#188038' }],
   {
     xPills: weeklyXPills,
-    yFocusFraction: 0.6,              // dynamic vertical zoom
-    endGap: 12,
-    pad: { l: 52, r: 36, t: 10, b: 48 }
+    yFocusFraction: 0.6,
+    endGap: 16,
+    pad: { l: 56, r: 40, t: 12, b: 64 }
   }
 );
 
@@ -410,21 +410,22 @@ window.addEventListener('resize', () => {
 
     // weekly green pills
 const weeklyXPills = (cache.weekly.labels || []).map((s, i) => {
-  const [a,b] = String(s).split('–');
-  const rangeShort = (a && b) ? `${a.slice(5)}–${b.slice(5)}` : s;
+  const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
+  const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
   return {
     day: rangeShort,
     pills: [{ text: fmtMoney(cache.weekly.points[i] || 0), color: '#188038' }]
   };
 });
+    
 drawLineChart(
   weeklyCanvas,
   [{ name: 'Weekly Sales', data: cache.weekly.points, color: '#188038' }],
   {
     xPills: weeklyXPills,
     yFocusFraction: 0.6,
-    endGap: 12,
-    pad: { l: 52, r: 36, t: 10, b: 48 }
+    endGap: 16,
+    pad: { l: 56, r: 40, t: 12, b: 64 }
   }
 );
 
