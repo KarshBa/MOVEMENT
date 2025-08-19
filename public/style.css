@@ -168,7 +168,12 @@ canvas { width: 100%; height: 100%; display: block; }
   
   /* Optional: show the compare legend inline to save space */
   #compareLegend { margin-top: 2mm; }
+  .top10-card {
+    page-break-before: always;
+    break-before: page;
+  }
 }
+
 .print-only {
   display: none;
   font-size: 1.8rem;
