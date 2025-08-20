@@ -125,57 +125,53 @@ if (options.xPills && options.xPills.length) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.font = labelFont;
+
   for (let i = 0; i < m; i++) {
-  const m = Math.min(n, options.xPills.length);
-  ctx.fillStyle = '#5f6368';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';   // <-- ensures consistent bottom alignment
-  ctx.font = labelFont;
-  for (let i = 0; i < n; i++) {
     const x = xPos(i);
-    const item = options.xPills[i]; // { day: 'Mon', pills: [{text, color}, ...] }
+    const item = options.xPills[i];
     if (!item) continue;
-    ctx.fillStyle = '#5f6368'; // re-assert after previous pill drawing
+
+    // re-assert label style each iteration (pill drawing changes state)
+    ctx.fillStyle = '#5f6368';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = labelFont;
 
     // day label above pills
     ctx.fillText(item.day || '', x, H - 30);
 
-    // pills (1–2) centered under the day
+    // pills
     const pills = Array.isArray(item.pills) ? item.pills : [];
     if (pills.length === 1) {
       drawPill(ctx, x, H - 6, pills[0].text, pills[0].color);
     } else if (pills.length === 2) {
       const gap = 8;
-      ctx.font = labelFont;
-      const widthFor = (t) => Math.ceil(ctx.measureText(t).width) + 12; // padH*2
+      const widthFor = (t) => Math.ceil(ctx.measureText(t).width) + 12;
       const w0 = widthFor(pills[0].text);
       const w1 = widthFor(pills[1].text);
       const total = w0 + w1 + gap;
-      const leftCenter  = x - total / 2 + w0 / 2;
-      const rightCenter = x + total / 2 - w1 / 2;
-
-      drawPill(ctx, leftCenter,  H - 6, pills[0].text, pills[0].color);
-      drawPill(ctx, rightCenter, H - 6, pills[1].text, pills[1].color);
+      drawPill(ctx, x - total/2 + w0/2, H - 6, pills[0].text, pills[0].color);
+      drawPill(ctx, x + total/2 - w1/2, H - 6, pills[1].text, pills[1].color);
     }
   }
-} else if (options.xLabelLines && options.xLabelLines.length === n) {
-  ctx.fillStyle = '#5f6368';
-ctx.textAlign = 'center';
-ctx.textBaseline = 'alphabetic'; // ensure consistent placement at bottom edge
-ctx.font = labelFont;
-for (let i = 0; i < n; i++) {
-  const x = xPos(i);
-  const [l1, l2] = options.xLabelLines[i];
-  ctx.fillText(l1, x, H - 18);
-  ctx.fillText(l2, x, H - 4);
+}   else if (options.xLabelLines && options.xLabelLines.length === n) {
+    ctx.fillStyle = '#5f6368';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic'; // ensure consistent placement at bottom edge
+    ctx.font = labelFont;
+    for (let i = 0; i < n; i++) {
+      const x = xPos(i);
+      const [l1, l2] = options.xLabelLines[i];
+    ctx.fillText(l1, x, H - 18);
+    ctx.fillText(l2, x, H - 4);
   }
-} else if (options.xLabels && options.xLabels.length === n) {
-  ctx.fillStyle = '#5f6368';
-  ctx.textAlign = 'center';
-  ctx.font = labelFont;
-  for (let i = 0; i < n; i++) {
-    const x = xPos(i);
-    ctx.fillText(options.xLabels[i], x, H - 4);
+}   else if (options.xLabels && options.xLabels.length === n) {
+    ctx.fillStyle = '#5f6368';
+    ctx.textAlign = 'center';
+    ctx.font = labelFont;
+    for (let i = 0; i < n; i++) {
+      const x = xPos(i);
+      ctx.fillText(options.xLabels[i], x, H - 4);
   }
 }
 
@@ -421,6 +417,15 @@ window.addEventListener('afterprint', () => {
   clearChartWrapHeights();
   window.dispatchEvent(new Event('resize')); // redraw back to screen size
 });
+
+const mqPrint = window.matchMedia && window.matchMedia('print');
+if (mqPrint && mqPrint.addEventListener) {
+  mqPrint.addEventListener('change', (e) => {
+    isPrinting = !!e.matches;
+    if (isPrinting) setChartWrapHeightsForPrint(); else clearChartWrapHeights();
+    window.dispatchEvent(new Event('resize'));
+  });
+}
 
 (async function init(){
   try {
