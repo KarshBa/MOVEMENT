@@ -184,20 +184,30 @@ seriesArr.forEach((s, idx) => {
   ctx.lineJoin = 'round';
   ctx.lineCap  = 'round';
 
-  ctx.beginPath();
+    ctx.beginPath();
+  let started = false;
   (s.data || []).forEach((v, i) => {
+    if (!Number.isFinite(v)) { started = false; return; }
     const x = xPos(i), y = yPos(v);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else { ctx.lineTo(x, y); }
   });
   ctx.stroke();
 
-  // points
-  ctx.fillStyle = color;
+  // points (with white outline for visibility)
   (s.data || []).forEach((v, i) => {
+    if (!Number.isFinite(v)) return;            // skip gaps
     const x = xPos(i), y = yPos(v);
+    const r = s.pointRadius ?? 3;               // optional per-series override
+    // fill
     ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
     ctx.fill();
+    // white outline (makes marker stand out over the line)
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
   });
 
   // end-of-line label
@@ -329,7 +339,7 @@ if (cache.weeklyPrev) {
   if (len > 0) {
     weeklySeries = [
       { name: 'Weekly Sales', data: weekly.points.slice(-len), color: '#188038' },
-      { name: 'Last Year',    data: prevPts.slice(-len),       color: '#d93025' }
+      { name: 'Last Year',    data: prevPts.slice(-len),       color: '#d93025', pointRadius: 3.5 }
     ];
   }
 }
@@ -485,7 +495,7 @@ if (cache.weeklyPrev) {
   if (len > 0) {
     weeklySeries = [
       { name: 'Weekly Sales', data: cache.weekly.points.slice(-len), color: '#188038' },
-      { name: 'Last Year',    data: prevPts.slice(-len),             color: '#d93025' }
+      { name: 'Last Year',    data: prevPts.slice(-len),             color: '#d93025', pointRadius: 3.5 }
     ];
   }
 }
