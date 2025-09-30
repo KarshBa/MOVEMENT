@@ -14,7 +14,7 @@ const weeklyCanvas  = document.getElementById('weeklyChart');
 const compareCanvas = document.getElementById('compareChart');
 const weeklyLabels  = document.getElementById('weeklyLabels');
 const topTbody      = document.getElementById('top10Body');
-let cache = { weekly: null, cmp: null, curName: null, prevName: null };
+let cache = { weekly: null, weeklyPrev: null, cmp: null, curName: null, prevName: null };
 let rAFid = 0;
 let isPrinting = false;
 
@@ -298,27 +298,53 @@ async function run() {
   const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
   cache.weekly = weekly;
 
-  // compact Sun–Sat label + green pill amount
-const weeklyXPills = (weekly.labels || []).map((s, i) => {
-  const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
-  const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
-  return {
-    day: rangeShort,
-    pills: [{ text: fmtMoney(weekly.points[i] || 0), color: '#188038' }]
-  };
-});
-
-drawLineChart(
-  weeklyCanvas,
-  [{ name: 'Weekly Sales', data: weekly.points, color: '#188038' }],
-  {
-    xPills: weeklyXPills,
-    yFocusFraction: 0.6,
-    endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 72 }
+  // Try to get YoY (previous-year) weekly data aligned to these 5 weeks
+  let weeklyPrev = null;
+  try {
+    weeklyPrev = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}&yoy=1`);
+  } catch (_) {
+    try {
+      weeklyPrev = await getJSON(`/api/dept-sales/weekly-prev?subdept=${encodeURIComponent(subdept)}`);
+    } catch (_) {
+      weeklyPrev = null; // silently ignore if not available
+    }
   }
-);
+  cache.weeklyPrev = (weeklyPrev && Array.isArray(weeklyPrev.points)) ? weeklyPrev : null;
 
+// compact Sun–Sat label + green pill amount (pills remain for current year)
+  const weeklyXPills = (weekly.labels || []).map((s, i) => {
+    const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
+    const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
+    return {
+      day: rangeShort,
+      pills: [{ text: fmtMoney(weekly.points[i] || 0), color: '#188038' }]
+    };
+  });
+
+  // Build series array: keep the existing green line; add a red YoY line if available
+  let weeklySeries = [{ name: 'Weekly Sales', data: weekly.points, color: '#188038' }];
+if (cache.weeklyPrev) {
+  const prevPts = cache.weeklyPrev.points || [];
+  const len = Math.min(weekly.points.length, prevPts.length);
+  if (len > 0) {
+    weeklySeries = [
+      { name: 'Weekly Sales', data: weekly.points.slice(-len), color: '#188038' },
+      { name: 'Last Year',    data: prevPts.slice(-len),       color: '#d93025' }
+    ];
+  }
+}
+
+  drawLineChart(
+    weeklyCanvas,
+    weeklySeries,
+    {
+      // keep pills aligned to the visible current-year points
+      xPills: weeklyXPills.slice(-weeklySeries[0].data.length),
+      yFocusFraction: 0.6,
+      endGap: 16,
+      pad: { l: 56, r: 40, t: 12, b: 72 }
+    }
+  );
     // If you still want the long labels elsewhere:
   if (weeklyLabels) weeklyLabels.textContent = weekly.labels.join('   |   ');
 
@@ -441,26 +467,39 @@ window.addEventListener('resize', () => {
   rAFid = requestAnimationFrame(() => {
     if (!cache.weekly || !cache.cmp) return;
 
-    // weekly green pills
-const weeklyXPills = (cache.weekly.labels || []).map((s, i) => {
-  const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
-  const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
-  return {
-    day: rangeShort,
-    pills: [{ text: fmtMoney(cache.weekly.points[i] || 0), color: '#188038' }]
-  };
-});
-    
-drawLineChart(
-  weeklyCanvas,
-  [{ name: 'Weekly Sales', data: cache.weekly.points, color: '#188038' }],
-  {
-    xPills: weeklyXPills,
-    yFocusFraction: 0.6,
-    endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 72 }
+    // weekly pills (current-year only)
+      const weeklyXPills = (cache.weekly.labels || []).map((s, i) => {
+        const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
+        const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
+        return {
+          day: rangeShort,
+          pills: [{ text: fmtMoney(cache.weekly.points[i] || 0), color: '#188038' }]
+        };
+      });
+
+      // Build series; add YoY if we have it in cache
+      let weeklySeries = [{ name: 'Weekly Sales', data: cache.weekly.points, color: '#188038' }];
+if (cache.weeklyPrev) {
+  const prevPts = cache.weeklyPrev.points || [];
+  const len = Math.min(cache.weekly.points.length, prevPts.length);
+  if (len > 0) {
+    weeklySeries = [
+      { name: 'Weekly Sales', data: cache.weekly.points.slice(-len), color: '#188038' },
+      { name: 'Last Year',    data: prevPts.slice(-len),             color: '#d93025' }
+    ];
   }
-);
+}
+
+      drawLineChart(
+        weeklyCanvas,
+        weeklySeries,
+        {
+          xPills: weeklyXPills.slice(-weeklySeries[0].data.length),
+          yFocusFraction: 0.6,
+          endGap: 16,
+          pad: { l: 56, r: 40, t: 12, b: 72 }
+        }
+      );
 
     // compare pills (green/orange) — rebuild on redraw
 const xPills = cache.cmp.labels.map((day, i) => ({
