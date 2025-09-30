@@ -346,19 +346,6 @@ if (cache.weeklyPrev && Array.isArray(cache.weeklyPrev.points)) {
   weeklySeries.push({ name: 'Last Year', data: prevAligned, color: '#d93025', pointRadius: 3.5 });
 }
 
-  drawLineChart(
-    weeklyCanvas,
-    weeklySeries,
-    {
-      // keep pills aligned to the visible current-year points
-      xPills: weeklyXPills,
-      yFocusFraction: 0.6,
-      endGap: 16,
-      pad: { l: 56, r: 40, t: 12, b: 72 },
-      legendEl: weeklyLegendEl
-    }
-  );
-
   // Ensure a legend after the weekly canvas (created once)
 const weeklyLegendEl = document.getElementById('weeklyLegend') || (() => {
   const el = document.createElement('div');
@@ -368,6 +355,18 @@ const weeklyLegendEl = document.getElementById('weeklyLegend') || (() => {
   weeklyCanvas.insertAdjacentElement('afterend', el);
   return el;
 })();
+
+drawLineChart(
+  weeklyCanvas,
+  weeklySeries,
+  {
+    xPills: weeklyXPills,                 // no slice
+    yFocusFraction: 0.6,
+    endGap: 16,
+    pad: { l: 56, r: 40, t: 12, b: 72 },
+    legendEl: weeklyLegendEl
+  }
+);
   
     // If you still want the long labels elsewhere:
   if (weeklyLabels) weeklyLabels.textContent = weekly.labels.join('   |   ');
@@ -482,9 +481,9 @@ if (mqPrint && mqPrint.addEventListener) {
     await loadSubdepts();
     await run();
   } catch (e) {
-    info.textContent = e.message || 'Failed to load data.';
-  }
-
+  console.error('[dept] init error', e);
+  info.textContent = e?.message || 'Failed to load data.';
+}
   // only redraw with cache on resize (no refetch) — debounced via rAF
 window.addEventListener('resize', () => {
   if (rAFid) cancelAnimationFrame(rAFid);
