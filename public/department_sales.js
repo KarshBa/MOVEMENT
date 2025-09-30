@@ -177,6 +177,7 @@ if (options.xPills && options.xPills.length) {
 
 // draw series (round caps/joins for visibility)
 const palette = options.palette || ['#188038', '#f29c1f', '#1a73e8', '#d93025'];
+const usedEndLabelYs = []; // <-- add this line
 seriesArr.forEach((s, idx) => {
   const color = s.color || palette[idx % palette.length];
   ctx.strokeStyle = color;
@@ -211,22 +212,30 @@ seriesArr.forEach((s, idx) => {
   });
 
   // end-of-line label
-  if (options.endLabels !== false) {
-    for (let i = (s.data?.length || 0) - 1; i >= 0; i--) {
-      const v = s.data[i];
-      if (Number.isFinite(v)) {
-        const x = xPos(i), y = yPos(v);
-        ctx.fillStyle = color;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = labelFont;
-        const label = s.name || `Series ${idx + 1}`;
-        ctx.fillText(` ${label}`, x + 8, y);
-        break;
+if (options.endLabels !== false) {
+  for (let i = (s.data?.length || 0) - 1; i >= 0; i--) {
+    const v = s.data[i];
+    if (Number.isFinite(v)) {
+      const x = xPos(i), y = yPos(v);
+      ctx.fillStyle = color;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = labelFont;
+      const label = s.name || `Series ${idx + 1}`;
+
+      // Nudge down if another label is basically on the same y
+      let yLabel = y;
+      for (const yy of usedEndLabelYs) {
+        if (Math.abs(yy - yLabel) < 12) { yLabel += 14; }
+      }
+      ctx.fillText(` ${label}`, x + 8, yLabel);
+      usedEndLabelYs.push(yLabel);
+
+      break;
+        }
       }
     }
-  }
-});
+  });
   
   // optional HTML legend target
   if (options.legendEl) {
@@ -303,10 +312,15 @@ async function run() {
   // Meta for week ranges
   const meta = await getJSON('/api/dept-sales/meta');
   wkEndEl.textContent = meta.lastWeekEnd || '—';
+  
+  // Derive years for series names and store for resize
+  const curYearStr = (meta.lastWeekEnd || '').slice(0, 4);
+    cache.thisYear = /^\d{4}$/.test(curYearStr) ? Number(curYearStr) : (new Date()).getFullYear();
+    cache.lastYear = cache.thisYear - 1;
 
     // Weekly 5
   const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
-  cache.weekly = weekly;
+    cache.weekly = weekly;
 
   // Try to get YoY (previous-year) weekly data aligned to these 5 weeks
   let weeklyPrev = null;
@@ -320,6 +334,8 @@ async function run() {
     }
   }
   cache.weeklyPrev = (weeklyPrev && Array.isArray(weeklyPrev.points)) ? weeklyPrev : null;
+  console.log('[weekly this year]', weekly.points);
+  console.log('[weekly last year]', cache.weeklyPrev?.points);
 
 // compact Sun–Sat label + green pill amount (pills remain for current year)
   const weeklyXPills = (weekly.labels || []).map((s, i) => {
@@ -332,7 +348,7 @@ async function run() {
   });
 
 // Build series array: green = full 5 weeks; red = only where YoY exists (gaps elsewhere)
-let weeklySeries = [{ name: 'This Year', data: weekly.points, color: '#188038' }];
+let weeklySeries = [{ name: String(cache.thisYear), data: weekly.points, color: '#188038' }];
 
 if (cache.weeklyPrev && Array.isArray(cache.weeklyPrev.points)) {
   const prevPts = cache.weeklyPrev.points;
@@ -341,9 +357,10 @@ if (cache.weeklyPrev && Array.isArray(cache.weeklyPrev.points)) {
   const avail = Math.min(weekly.points.length, prevPts.length);
   for (let i = 0; i < avail; i++) {
     // put YoY values at the tail so week-to-week alignment matches your current labels
-    prevAligned[weekly.points.length - avail + i] = prevPts[prevPts.length - avail + i];
+    const val = Number(prevPts[prevPts.length - avail + i]);
+      prevAligned[weekly.points.length - avail + i] = Number.isFinite(val) ? val : NaN;
   }
-  weeklySeries.push({ name: 'Last Year', data: prevAligned, color: '#d93025', pointRadius: 3.5 });
+  weeklySeries.push({ name: String(cache.lastYear), data: prevAligned, color: '#d93025', pointRadius: 3.5 });
 }
 
   // Ensure a legend after the weekly canvas (created once)
@@ -352,21 +369,18 @@ const weeklyLegendEl = document.getElementById('weeklyLegend') || (() => {
   el.id = 'weeklyLegend';
   el.className = 'muted';
   el.style.marginTop = '.25rem';
+  el.style.textAlign = 'center';
   weeklyCanvas.insertAdjacentElement('afterend', el);
   return el;
 })();
 
-drawLineChart(
-  weeklyCanvas,
-  weeklySeries,
-  {
-    xPills: weeklyXPills,                 // no slice
-    yFocusFraction: 0.6,
-    endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 72 },
-    legendEl: weeklyLegendEl
-  }
-);
+drawLineChart(weeklyCanvas, weeklySeries, {
+  xPills: weeklyXPills,
+  yFocusFraction: 0.6,
+  endGap: 16,
+  pad: { l: 56, r: 64, t: 12, b: 72 },  // r: 64
+  legendEl: weeklyLegendEl
+});
   
     // If you still want the long labels elsewhere:
   if (weeklyLabels) weeklyLabels.textContent = weekly.labels.join('   |   ');
@@ -410,6 +424,7 @@ const xPills = cmp.labels.map((day, i) => ({
 }));
 
 const compareLegend = document.getElementById('compareLegend');
+  if (compareLegend) compareLegend.style.textAlign = 'center';
 drawLineChart(
   compareCanvas,
   [
@@ -501,7 +516,11 @@ window.addEventListener('resize', () => {
       });
 
       // Build series; green full length, red aligned/gapped
-let weeklySeries = [{ name: 'This Year', data: cache.weekly.points, color: '#188038' }];
+let weeklySeries = [{
+  name: String(cache.thisYear || (new Date()).getFullYear()),
+  data: cache.weekly.points,
+  color: '#188038'
+}];
 
 if (cache.weeklyPrev && Array.isArray(cache.weeklyPrev.points)) {
   const prevPts = cache.weeklyPrev.points;
@@ -510,7 +529,12 @@ if (cache.weeklyPrev && Array.isArray(cache.weeklyPrev.points)) {
   for (let i = 0; i < avail; i++) {
     prevAligned[cache.weekly.points.length - avail + i] = prevPts[prevPts.length - avail + i];
   }
-  weeklySeries.push({ name: 'Last Year', data: prevAligned, color: '#d93025', pointRadius: 3.5 });
+  weeklySeries.push({
+  name: String(cache.lastYear || ((cache.thisYear || (new Date()).getFullYear()) - 1)),
+  data: prevAligned,
+  color: '#d93025',
+  pointRadius: 3.5
+});
 }
 
 // Create (or get) legend next to weekly chart
@@ -519,22 +543,19 @@ const weeklyLegendEl = document.getElementById('weeklyLegend') || (() => {
   el.id = 'weeklyLegend';
   el.className = 'muted';
   el.style.marginTop = '.25rem';
+  el.style.textAlign = 'center';
   weeklyCanvas.insertAdjacentElement('afterend', el);
   return el;
 })();
 
-drawLineChart(
-  weeklyCanvas,
-  weeklySeries,
-  {
-    xPills: weeklyXPills,                   // <-- no slice
-    yFocusFraction: 0.6,
-    endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 72 },
-    legendEl: weeklyLegendEl
-  }
-);
-
+drawLineChart(weeklyCanvas, weeklySeries, {
+  xPills: weeklyXPills,
+  yFocusFraction: 0.6,
+  endGap: 16,
+  pad: { l: 56, r: 64, t: 12, b: 72 },  // r: 64
+  legendEl: weeklyLegendEl
+});
+  
     // compare pills (green/orange) — rebuild on redraw
 const xPills = cache.cmp.labels.map((day, i) => ({
   day,
@@ -545,6 +566,7 @@ const xPills = cache.cmp.labels.map((day, i) => ({
 }));
 
 const compareLegend = document.getElementById('compareLegend');
+    if (compareLegend) compareLegend.style.textAlign = 'center';
 drawLineChart(
   compareCanvas,
   [
