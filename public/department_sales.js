@@ -294,30 +294,51 @@ async function run() {
   const meta = await getJSON('/api/dept-sales/meta');
   wkEndEl.textContent = meta.lastWeekEnd || '—';
 
-    // Weekly 5
+      // Weekly 5
   const weekly = await getJSON(`/api/dept-sales/weekly?subdept=${encodeURIComponent(subdept)}`);
   cache.weekly = weekly;
 
-  // compact Sun–Sat label + green pill amount
-const weeklyXPills = (weekly.labels || []).map((s, i) => {
-  const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
-  const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
-  return {
-    day: rangeShort,
-    pills: [{ text: fmtMoney(weekly.points[i] || 0), color: '#188038' }]
-  };
-});
+  // Normalize API fields:
+  // - thisYearData: this year's last 5 weeks
+  // - lastYearData: last year's comparable 5 weeks (if present)
+  const thisYearData = weekly.pointsThis ?? weekly.points ?? [];
+  const lastYearData = weekly.pointsLast ?? weekly.prevPoints ?? null;
 
-drawLineChart(
-  weeklyCanvas,
-  [{ name: 'Weekly Sales', data: weekly.points, color: '#188038' }],
-  {
-    xPills: weeklyXPills,
-    yFocusFraction: 0.6,
-    endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 72 }
+  const thisYearLabel = weekly.year ?? new Date().getFullYear();
+  const lastYearLabel = weekly.prevYear ?? (thisYearLabel - 1);
+
+  // compact Sun–Sat label + green pill amount (this year only)
+  const weeklyXPills = (weekly.labels || []).map((s, i) => {
+    const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
+    const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
+    return {
+      day: rangeShort,
+      pills: [{ text: fmtMoney(thisYearData[i] || 0), color: '#188038' }]
+    };
+  });
+
+  // Build series array: always this year (green), add last year (red) if available
+  const weeklySeries = [
+    { name: String(thisYearLabel), data: thisYearData, color: '#188038' } // green
+  ];
+  if (Array.isArray(lastYearData)) {
+    weeklySeries.push({
+      name: String(lastYearLabel),
+      data: lastYearData,
+      color: '#d93025' // red
+    });
   }
-);
+
+  drawLineChart(
+    weeklyCanvas,
+    weeklySeries,
+    {
+      xPills: weeklyXPills,
+      yFocusFraction: 0.6,
+      endGap: 16,
+      pad: { l: 56, r: 40, t: 12, b: 72 }
+    }
+  );
 
     // If you still want the long labels elsewhere:
   if (weeklyLabels) weeklyLabels.textContent = weekly.labels.join('   |   ');
@@ -441,26 +462,44 @@ window.addEventListener('resize', () => {
   rAFid = requestAnimationFrame(() => {
     if (!cache.weekly || !cache.cmp) return;
 
-    // weekly green pills
-const weeklyXPills = (cache.weekly.labels || []).map((s, i) => {
-  const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
-  const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
-  return {
-    day: rangeShort,
-    pills: [{ text: fmtMoney(cache.weekly.points[i] || 0), color: '#188038' }]
-  };
-});
-    
-drawLineChart(
-  weeklyCanvas,
-  [{ name: 'Weekly Sales', data: cache.weekly.points, color: '#188038' }],
-  {
-    xPills: weeklyXPills,
-    yFocusFraction: 0.6,
-    endGap: 16,
-    pad: { l: 56, r: 40, t: 12, b: 72 }
-  }
-);
+        // weekly green pills + two-line redraw (this year + last year)
+    const weekly = cache.weekly;
+
+    const thisYearData = weekly.pointsThis ?? weekly.points ?? [];
+    const lastYearData = weekly.pointsLast ?? weekly.prevPoints ?? null;
+    const thisYearLabel = weekly.year ?? new Date().getFullYear();
+    const lastYearLabel = weekly.prevYear ?? (thisYearLabel - 1);
+
+    const weeklyXPills = (weekly.labels || []).map((s, i) => {
+      const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
+      const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
+      return {
+        day: rangeShort,
+        pills: [{ text: fmtMoney(thisYearData[i] || 0), color: '#188038' }]
+      };
+    });
+
+    const weeklySeries = [
+      { name: String(thisYearLabel), data: thisYearData, color: '#188038' } // green
+    ];
+    if (Array.isArray(lastYearData)) {
+      weeklySeries.push({
+        name: String(lastYearLabel),
+        data: lastYearData,
+        color: '#d93025' // red
+      });
+    }
+
+    drawLineChart(
+      weeklyCanvas,
+      weeklySeries,
+      {
+        xPills: weeklyXPills,
+        yFocusFraction: 0.6,
+        endGap: 16,
+        pad: { l: 56, r: 40, t: 12, b: 72 }
+      }
+    );
 
     // compare pills (green/orange) — rebuild on redraw
 const xPills = cache.cmp.labels.map((day, i) => ({
