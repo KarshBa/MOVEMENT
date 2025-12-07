@@ -20,6 +20,13 @@ let isPrinting = false;
 
 function fmtMoney(n){ return new Intl.NumberFormat(undefined,{minimumFractionDigits:0, maximumFractionDigits:0}).format(n); }
 
+function fmtMoney2(n){
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(n);
+}
+
 // very small line chart helper (auto y-bounds + end-of-line labels)
 function drawLineChart(canvas, seriesArr, options = {}) {
   if (!canvas) return;                           // <-- guard: missing canvas
@@ -398,7 +405,7 @@ drawLineChart(
       <td>${escapeHtml(it.code || '')}</td>
       <td>${escapeHtml(it.brand || '')}</td>
       <td>${escapeHtml(it.description || '')}</td>
-      <td>${fmtMoney(it.amount)}</td>
+      <td>${fmtMoney2(it.amount)}</td>
     </tr>
   `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
 }
