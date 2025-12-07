@@ -35,6 +35,32 @@
   /* Make canvas crisp on print */
   canvas { height: auto !important; }
 }
+    .card { background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:0.75rem; margin:0.75rem 0; }
+    .chart-wrap { width:100%; overflow-x:auto; }
+    canvas { width:100%; height:240px; display:block; }
+
+    .shrink-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:1rem;
+      align-items:stretch;
+    }
+    .shrink-col {
+      flex:1 1 240px;
+      min-width:220px;
+      text-align:center;
+    }
+    .shrink-col canvas {
+      height:200px;
+    }
+    .center { text-align:center; }
+
+    #topShrinkWeek th:last-child,
+    #topShrinkWeek td:last-child,
+    #topShrink30 th:last-child,
+    #topShrink30 td:last-child {
+      text-align:right;
+    }
   </style>
 </head>
 <body>
@@ -64,7 +90,59 @@
       <canvas id="compareChart" role="img" aria-label="Current week sales compared to previous week, day by day"></canvas>
       <div id="compareLegend" class="muted" style="margin-top:.25rem;"></div>
     </div>
+          <div class="card" id="shrinkDonutsCard">
+      <div class="legend"><strong>Shrink vs Sales</strong></div>
+      <div class="shrink-row">
+        <div class="shrink-col">
+          <canvas id="shrinkWeekChart" role="img"
+                  aria-label="Shrink percentage last week (Sun–Sat)"></canvas>
+          <div class="muted center">
+            Last week shrink: <span id="shrinkWeekPct">—</span>
+          </div>
+        </div>
+        <div class="shrink-col">
+          <canvas id="shrink30Chart" role="img"
+                  aria-label="Shrink percentage last 30 days"></canvas>
+          <div class="muted center">
+            Last 30 days shrink: <span id="shrink30Pct">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
+    <div class="card" id="topShrinkWeekCard">
+      <div class="legend"><strong>Top 10 shrink items last week ($)</strong></div>
+      <div class="table-scroll">
+        <table id="topShrinkWeek" style="width:100%;">
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Brand</th>
+              <th>Description</th>
+              <th>Shrink ($)</th>
+            </tr>
+          </thead>
+          <tbody id="topShrinkWeekBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="topShrink30Card">
+      <div class="legend"><strong>Top 10 shrink items last 30 days ($)</strong></div>
+      <div class="table-scroll">
+        <table id="topShrink30" style="width:100%;">
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Brand</th>
+              <th>Description</th>
+              <th>Shrink ($)</th>
+            </tr>
+          </thead>
+          <tbody id="topShrink30Body"></tbody>
+        </table>
+      </div>
+    </div>
     <div class="card" id="top10Card">
       <div class="legend"><strong>Top 10 items by sales last week ($)</strong></div>
       <div class="table-scroll">
