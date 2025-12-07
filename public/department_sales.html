@@ -17,7 +17,11 @@
     .legend { font-size:.9rem; color:#5f6368; margin:.25rem 0 .5rem; }
     .muted { color:#5f6368; font-size:.85rem; }
     #top10 th:last-child,
-    #top10 td:last-child { text-align: right; }
+    #top10 td:last-child,
+    #top10Units th:last-child,
+    #top10Units td:last-child {
+      text-align: right;
+    }
     @media print {
   /* Hide controls in print, optional: */
   header, #btnGo, #btnPrint, section[aria-label="filters"] { display: none !important; }
@@ -74,6 +78,22 @@
             </tr>
           </thead>
           <tbody id="top10Body"></tbody>
+        </table>
+      </div>
+    </div>
+        <div class="card" id="top10UnitsCard">
+      <div class="legend"><strong>Top 10 items by units last week (U)</strong></div>
+      <div class="table-scroll">
+        <table id="top10Units" style="width:100%;">
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Brand</th>
+              <th>Description</th>
+              <th>Units (U)</th>
+            </tr>
+          </thead>
+          <tbody id="top10UnitsBody"></tbody>
         </table>
       </div>
     </div>
