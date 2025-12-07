@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import morgan from 'morgan';
 import crypto from 'crypto';
+import fetch from 'node-fetch';
 import { format as csvFormat } from '@fast-csv/format';
 import { Worker } from 'node:worker_threads';
 import { parse as csvParse } from 'csv-parse';
@@ -699,6 +700,29 @@ function dailySeriesBetween({ start, end, subdept }) {
   return out;
 }
 
+// Base URL for the shrink service (inventory_app)
+// e.g. SHRINK_BASE=http://inventory-shrink.onrender.com
+const SHRINK_BASE = process.env.SHRINK_BASE || '';
+
+async function fetchShrinkSummary({ subdept, start, end }) {
+  if (!SHRINK_BASE) {
+    return { total: 0, items: [] };
+  }
+
+  const url = new URL('/api/shrink-summary', SHRINK_BASE);
+  url.searchParams.set('from', start);
+  url.searchParams.set('to', end);
+  if (subdept && subdept !== 'all') {
+    url.searchParams.set('subdept', String(subdept));
+  }
+
+  const resp = await fetch(url.toString(), { timeout: 15_000 });
+  if (!resp.ok) {
+    throw new Error(`shrink-summary ${resp.status} ${resp.statusText}`);
+  }
+  return resp.json();
+}
+
 // ===== Department Sales routes =====
 
 // Meta: last complete week-end (Saturday) and the 5 week ranges we’ll use.
@@ -851,6 +875,68 @@ app.get('/api/dept-sales/top-items-units', (req, res) => {
     items: rows.map(r => ({ ...r, units: Number(r.units || 0) })),
     range: { start, end }
   });
+});
+
+// Shrink vs Sales: last week + last 30 days for selected subdept
+// GET /api/dept-sales/shrink-metrics?subdept=all|###
+//
+// Returns:
+// {
+//   lastWeek: {
+//     start, end, sales, shrink, percent, topItems: [...]
+//   },
+//   last30:   { ... }
+// }
+app.get('/api/dept-sales/shrink-metrics', async (req, res) => {
+  const subdept = (req.query.subdept || 'all').toString();
+  const lastWeekEnd = getLastCompleteWeekEnd();
+  if (!lastWeekEnd) {
+    return res.json({ lastWeek: null, last30: null });
+  }
+
+  // Last complete week (Sun–Sat)
+  const weekRange = weekBoundsFromEnd(lastWeekEnd); // { start, end }
+  const weekStart = weekRange.start;
+  const weekEnd   = weekRange.end;
+
+  // Last 30 days ending on that same Saturday
+  const end30   = toDate(weekEnd);
+  const start30 = fmtDate(addDays(end30, -29)); // include end day → 30 days total
+
+  try {
+    const [shrinkWeek, shrink30] = await Promise.all([
+      fetchShrinkSummary({ subdept, start: weekStart, end: weekEnd }),
+      fetchShrinkSummary({ subdept, start: start30,   end: weekEnd })
+    ]);
+
+    const salesWeek = sumAmountBetween({ start: weekStart, end: weekEnd, subdept });
+    const sales30   = sumAmountBetween({ start: start30,   end: weekEnd, subdept });
+
+    const pctWeek = salesWeek > 0 ? (shrinkWeek.total / salesWeek) * 100 : 0;
+    const pct30   = sales30   > 0 ? (shrink30.total   / sales30)   * 100 : 0;
+
+    res.json({
+      lastWeek: {
+        start: weekStart,
+        end: weekEnd,
+        sales: salesWeek,
+        shrink: shrinkWeek.total,
+        percent: pctWeek,
+        topItems: shrinkWeek.items || []
+      },
+      last30: {
+        start: start30,
+        end: weekEnd,
+        sales: sales30,
+        shrink: shrink30.total,
+        percent: pct30,
+        topItems: shrink30.items || []
+      }
+    });
+  } catch (err) {
+    console.error('[dept-sales] shrink-metrics failed:', err);
+    res.status(500).json({ error: 'shrink-metrics-failed', message: err.message });
+  }
 });
 
 app.get('/api/range', (req, res) => {
