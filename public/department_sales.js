@@ -478,6 +478,7 @@ drawLineChart(
   `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
   // ─── Shrink vs Sales: last week + last 30 days ──────────────────────
   const shrink = await getJSON(`/api/dept-sales/shrink-metrics?subdept=${encodeURIComponent(subdept)}`);
+  console.log('shrink metrics JSON:', shrink);
   cache.shrink = shrink;
 
   if (shrink && shrink.lastWeek) {
