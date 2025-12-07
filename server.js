@@ -715,22 +715,68 @@ app.get('/api/dept-sales/meta', (_req, res) => {
   res.json({ lastWeekEnd, weeks: weeks.reverse() }); // oldest→newest for chart left→right
 });
 
-// Weekly totals for last 5 complete weeks (storewide or single subdept).
+// Weekly totals for last 5 complete weeks (storewide or single subdept),
+// PLUS same 5 weeks from the prior year for comparison.
+//
 // Query: ?subdept=all  OR  ?subdept=###   (omit/empty == all)
 app.get('/api/dept-sales/weekly', (req, res) => {
   const subdept = (req.query.subdept || 'all').toString();
   const lastWeekEnd = getLastCompleteWeekEnd();
-  if (!lastWeekEnd) return res.json({ points: [], labels: [] });
+  if (!lastWeekEnd) {
+    return res.json({
+      labels: [],
+      points: [],
+      pointsThis: [],
+      pointsLast: [],
+      year: null,
+      prevYear: null,
+      lastWeekEnd: null
+    });
+  }
+
+  // Last complete Saturday in the data (this year)
+  const lastEndThis = toDate(lastWeekEnd);
+
+  // "Same" Saturday 52 weeks earlier (364 days back) for prior year
+  const lastEndPrev = addDays(lastEndThis, -364);
+
+  const thisYear = lastEndThis.getFullYear();
+  const prevYear = lastEndPrev.getFullYear();
 
   const labels = [];
-  const points = [];
+  const pointsThis = [];
+  const pointsLast = [];
+
+  // Build from oldest → newest (left → right on chart)
   for (let i = 4; i >= 0; i--) {
-    const sat = fmtDate(addDays(toDate(lastWeekEnd), -7 * i));
-    const { start, end } = weekBoundsFromEnd(sat);
+    // ----- This year week -----
+    const satThis = fmtDate(addDays(lastEndThis, -7 * i));   // Saturday
+    const { start, end } = weekBoundsFromEnd(satThis);       // Sun–Sat
     labels.push(`${start}–${end}`);
-    points.push(sumAmountBetween({ start, end, subdept }));
+    pointsThis.push(sumAmountBetween({ start, end, subdept }));
+
+    // ----- Last year comparable week (52 weeks earlier) -----
+    const satPrev = fmtDate(addDays(lastEndPrev, -7 * i));
+    const prevRange = weekBoundsFromEnd(satPrev);
+    pointsLast.push(
+      sumAmountBetween({
+        start: prevRange.start,
+        end:   prevRange.end,
+        subdept
+      })
+    );
   }
-  res.json({ labels, points, lastWeekEnd });
+
+  // Keep "points" as an alias for this year's data so older UIs don't break.
+  res.json({
+    labels,
+    points: pointsThis,   // backward-compatible
+    pointsThis,
+    pointsLast,
+    year: thisYear,
+    prevYear,
+    lastWeekEnd
+  });
 });
 
 // Day-by-day compare: current complete week vs previous week (each Sun–Sat).
