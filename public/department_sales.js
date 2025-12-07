@@ -14,6 +14,7 @@ const weeklyCanvas  = document.getElementById('weeklyChart');
 const compareCanvas = document.getElementById('compareChart');
 const weeklyLabels  = document.getElementById('weeklyLabels');
 const topTbody      = document.getElementById('top10Body');
+const topUnitsTbody = document.getElementById('top10UnitsBody');
 let cache = { weekly: null, cmp: null, curName: null, prevName: null };
 let rAFid = 0;
 let isPrinting = false;
@@ -406,6 +407,18 @@ drawLineChart(
       <td>${escapeHtml(it.brand || '')}</td>
       <td>${escapeHtml(it.description || '')}</td>
       <td>${fmtMoney2(it.amount)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+}
+
+  // Top 10 items by units (U)
+  const topUnits = await getJSON(`/api/dept-sales/top-items-units?subdept=${encodeURIComponent(subdept)}`);
+  topUnitsTbody.innerHTML = (topUnits.items || []).map(it => `
+    <tr>
+      <td>${escapeHtml(it.code || '')}</td>
+      <td>${escapeHtml(it.brand || '')}</td>
+      <td>${escapeHtml(it.description || '')}</td>
+      <td>${fmtMoney(it.units)}</td>
     </tr>
   `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
 }
