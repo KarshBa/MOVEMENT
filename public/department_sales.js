@@ -315,14 +315,20 @@ async function run() {
   const thisYearLabel = weekly.year ?? new Date().getFullYear();
   const lastYearLabel = weekly.prevYear ?? (thisYearLabel - 1);
 
-  // compact Sun–Sat label + green pill amount (this year only)
+    // compact Sun–Sat label + pills:
+  // green = this year, red = last year (if available)
   const weeklyXPills = (weekly.labels || []).map((s, i) => {
     const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
     const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
-    return {
-      day: rangeShort,
-      pills: [{ text: fmtMoney(thisYearData[i] || 0), color: '#188038' }]
-    };
+
+    const pills = [
+      { text: fmtMoney(thisYearData[i] || 0), color: '#188038' } // this year (green)
+    ];
+    if (Array.isArray(lastYearData)) {
+      pills.push({ text: fmtMoney(lastYearData[i] || 0), color: '#d93025' }); // last year (red)
+    }
+
+    return { day: rangeShort, pills };
   });
 
   // Build series array: always this year (green), add last year (red) if available
@@ -489,13 +495,18 @@ window.addEventListener('resize', () => {
     const thisYearLabel = weekly.year ?? new Date().getFullYear();
     const lastYearLabel = weekly.prevYear ?? (thisYearLabel - 1);
 
-    const weeklyXPills = (weekly.labels || []).map((s, i) => {
+        const weeklyXPills = (weekly.labels || []).map((s, i) => {
       const m = /^(\d{4}-\d{2}-\d{2})\D+(\d{4}-\d{2}-\d{2})$/.exec(String(s).trim());
       const rangeShort = m ? `${m[1].slice(5)}–${m[2].slice(5)}` : String(s);
-      return {
-        day: rangeShort,
-        pills: [{ text: fmtMoney(thisYearData[i] || 0), color: '#188038' }]
-      };
+
+      const pills = [
+        { text: fmtMoney(thisYearData[i] || 0), color: '#188038' } // this year (green)
+      ];
+      if (Array.isArray(lastYearData)) {
+        pills.push({ text: fmtMoney(lastYearData[i] || 0), color: '#d93025' }); // last year (red)
+      }
+
+      return { day: rangeShort, pills };
     });
 
     const weeklySeries = [
