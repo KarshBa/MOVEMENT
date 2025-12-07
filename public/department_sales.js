@@ -409,7 +409,6 @@ drawLineChart(
       <td>${fmtMoney2(it.amount)}</td>
     </tr>
   `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
-}
 
   // Top 10 items by units (U)
   const topUnits = await getJSON(`/api/dept-sales/top-items-units?subdept=${encodeURIComponent(subdept)}`);
