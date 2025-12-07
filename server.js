@@ -825,6 +825,34 @@ app.get('/api/dept-sales/top-items', (req, res) => {
   res.json({ items: rows.map(r => ({ ...r, amount: Number(r.amount || 0) })), range: { start, end } });
 });
 
+// Top 10 items by units for the last complete week.
+// Query: ?subdept=all  OR  ?subdept=###
+app.get('/api/dept-sales/top-items-units', (req, res) => {
+  const subdept = (req.query.subdept || 'all').toString();
+  const weekEnd = getLastCompleteWeekEnd();
+  if (!weekEnd) return res.json({ items: [], range: null });
+
+  const { start, end } = weekBoundsFromEnd(weekEnd);
+
+  const base = `
+    SELECT item_code AS code,
+           MAX(item_brand) AS brand,
+           MAX(item_pos_desc) AS description,
+           SUM(units_sum) AS units
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ?`;
+  const group = ` GROUP BY item_code ORDER BY units DESC LIMIT 10`;
+
+  const rows = (subdept && subdept !== 'all')
+    ? db.prepare(base + ` AND subdept_no = ?` + group).all(start, end, Number(subdept))
+    : db.prepare(base + group).all(start, end);
+
+  res.json({
+    items: rows.map(r => ({ ...r, units: Number(r.units || 0) })),
+    range: { start, end }
+  });
+});
+
 app.get('/api/range', (req, res) => {
   const vr = validateDateRange(req.query);
   if (vr.error) return res.status(400).json({ error: vr.error });
