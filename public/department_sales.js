@@ -481,6 +481,20 @@ drawLineChart(
   console.log('shrink metrics JSON:', shrink);
   cache.shrink = shrink;
 
+  // DEBUG: force some fake values to test rendering
+if (shrink && shrink.lastWeek) {
+  shrink.lastWeek.percent = 4.2;
+  shrink.lastWeek.topItems = [
+    { code: 'TEST1', brand: 'Debug', description: 'Forced last-week item', amount: 123.45 }
+  ];
+}
+if (shrink && shrink.last30) {
+  shrink.last30.percent = 7.8;
+  shrink.last30.topItems = [
+    { code: 'TEST2', brand: 'Debug', description: 'Forced 30-day item', amount: 987.65 }
+  ];
+}
+
   if (shrink && shrink.lastWeek) {
     const pct = shrink.lastWeek.percent || 0;
     drawDonutChart(shrinkWeekCanvas, pct, {
