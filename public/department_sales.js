@@ -15,6 +15,12 @@ const compareCanvas = document.getElementById('compareChart');
 const weeklyLabels  = document.getElementById('weeklyLabels');
 const topTbody      = document.getElementById('top10Body');
 const topUnitsTbody = document.getElementById('top10UnitsBody');
+const shrinkWeekCanvas    = document.getElementById('shrinkWeekChart');
+const shrink30Canvas      = document.getElementById('shrink30Chart');
+const shrinkWeekPctEl     = document.getElementById('shrinkWeekPct');
+const shrink30PctEl       = document.getElementById('shrink30Pct');
+const topShrinkWeekTbody  = document.getElementById('topShrinkWeekBody');
+const topShrink30Tbody    = document.getElementById('topShrink30Body');
 let cache = { weekly: null, cmp: null, curName: null, prevName: null };
 let rAFid = 0;
 let isPrinting = false;
@@ -30,15 +36,15 @@ function fmtMoney2(n){
 
 // very small line chart helper (auto y-bounds + end-of-line labels)
 function drawLineChart(canvas, seriesArr, options = {}) {
-  if (!canvas) return;                           // <-- guard: missing canvas
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;                              // <-- guard: no 2d context
+  if (!ctx) return;
   const dpr = (options.dpr != null) ? options.dpr : (isPrinting ? 1 : (window.devicePixelRatio || 1));
   const W = canvas.clientWidth  || canvas.width  || 600;
   const H = canvas.clientHeight || canvas.height || 300;
   canvas.width  = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // crisp on screen; DPR=1 on print
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
   const fmtMoney = options.yFormatter || (n => new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n));
@@ -69,31 +75,29 @@ function drawLineChart(canvas, seriesArr, options = {}) {
   }
 
   // Dynamically focus the vertical range around the top values.
-// e.g. yFocusFraction = 0.6 shows roughly the top 60% of the scale.
-if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFraction < 1 && Number.isFinite(max)) {
-  const dataMin = allVals.length ? Math.min(...allVals) : 0;
-  const targetMin = Math.max(0, max - max * options.yFocusFraction); // e.g., 40% of top becomes baseline
-  // Ensure we still include the actual data min if it's above the targetMin (with a tiny pad)
-  if (targetMin > dataMin) {
-    min = Math.max(0, dataMin - Math.max(10, (max - dataMin) * 0.05));
-  } else {
-    min = targetMin;
+  if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFraction < 1 && Number.isFinite(max)) {
+    const dataMin = allVals.length ? Math.min(...allVals) : 0;
+    const targetMin = Math.max(0, max * (1 - options.yFocusFraction));
+    if (targetMin > dataMin) {
+      min = Math.max(0, dataMin - Math.max(10, (max - dataMin) * 0.05));
+    } else {
+      min = targetMin;
+    }
   }
-}
 
   // snap to "nice" ticks
   const tickCount = 5;
-  const span = Math.max(1, max - min);      // avoid 0 / tiny spans
+  const span = Math.max(1, max - min);
   const rawStep = span / tickCount;
   const nice = niceStep(rawStep);
   min = Math.floor(min / nice) * nice;
   max = Math.ceil(max / nice) * nice;
 
   function xPos(i) {
-  const span = Math.max(0, plotW - endGap);
-  return pad.l + (n <= 1 ? span / 2 : (span * (i / (n - 1))));
-}
-  
+    const span = Math.max(0, plotW - endGap);
+    return pad.l + (n <= 1 ? span / 2 : (span * (i / (n - 1))));
+  }
+
   function yPos(v) {
     const t = (v - min) / (max - min || 1);
     return pad.t + (1 - t) * plotH;
@@ -111,122 +115,114 @@ if (options.yFocusFraction && options.yFocusFraction > 0 && options.yFocusFracti
   // y ticks
   ctx.fillStyle = '#5f6368';
   const labelFont = (isPrinting ? '11px' : '12px') + ' system-ui, -apple-system, Segoe UI, Arial';
-  ctx.font = labelFont;               // ← apply for Y-axis ticks
+  ctx.font = labelFont;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
   for (let v = min; v <= max + 1e-9; v += nice) {
     const y = yPos(v);
-    // light grid line
     ctx.strokeStyle = '#f1f3f4';
     ctx.beginPath();
     ctx.moveTo(pad.l, y);
     ctx.lineTo(pad.l + plotW, y);
     ctx.stroke();
-    // tick label
     ctx.fillText(fmtMoney(v), 6, y);
   }
 
-   // X labels: supports three modes — xPills (day + colored pills), two-line, or single-line
-if (options.xPills && options.xPills.length) {
-  const m = Math.min(n, options.xPills.length);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.font = labelFont;
-
-  for (let i = 0; i < m; i++) {
-    const x = xPos(i);
-    const item = options.xPills[i];
-    if (!item) continue;
-
-    // re-assert label style each iteration (pill drawing changes state)
-    ctx.fillStyle = '#5f6368';
+  // X labels
+  if (options.xPills && options.xPills.length) {
+    const m = Math.min(n, options.xPills.length);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.font = labelFont;
 
-    // day label above pills
-    ctx.fillText(item.day || '', x, H - 30);
+    for (let i = 0; i < m; i++) {
+      const x = xPos(i);
+      const item = options.xPills[i];
+      if (!item) continue;
 
-    // pills
-    const pills = Array.isArray(item.pills) ? item.pills : [];
-    if (pills.length === 1) {
-      drawPill(ctx, x, H - 6, pills[0].text, pills[0].color);
-    } else if (pills.length === 2) {
-      const gap = 8;
-      const widthFor = (t) => Math.ceil(ctx.measureText(t).width) + 12;
-      const w0 = widthFor(pills[0].text);
-      const w1 = widthFor(pills[1].text);
-      const total = w0 + w1 + gap;
-      drawPill(ctx, x - total/2 + w0/2, H - 6, pills[0].text, pills[0].color);
-      drawPill(ctx, x + total/2 - w1/2, H - 6, pills[1].text, pills[1].color);
+      ctx.fillStyle = '#5f6368';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.font = labelFont;
+
+      ctx.fillText(item.day || '', x, H - 30);
+
+      const pills = Array.isArray(item.pills) ? item.pills : [];
+      if (pills.length === 1) {
+        drawPill(ctx, x, H - 6, pills[0].text, pills[0].color);
+      } else if (pills.length === 2) {
+        const gap = 8;
+        const widthFor = (t) => Math.ceil(ctx.measureText(t).width) + 12;
+        const w0 = widthFor(pills[0].text);
+        const w1 = widthFor(pills[1].text);
+        const total = w0 + w1 + gap;
+        drawPill(ctx, x - total/2 + w0/2, H - 6, pills[0].text, pills[0].color);
+        drawPill(ctx, x + total/2 - w1/2, H - 6, pills[1].text, pills[1].color);
+      }
     }
-  }
-}   else if (options.xLabelLines && options.xLabelLines.length === n) {
+  } else if (options.xLabelLines && options.xLabelLines.length === n) {
     ctx.fillStyle = '#5f6368';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic'; // ensure consistent placement at bottom edge
+    ctx.textBaseline = 'alphabetic';
     ctx.font = labelFont;
     for (let i = 0; i < n; i++) {
       const x = xPos(i);
       const [l1, l2] = options.xLabelLines[i];
-    ctx.fillText(l1, x, H - 18);
-    ctx.fillText(l2, x, H - 4);
-  }
-}   else if (options.xLabels && options.xLabels.length === n) {
+      ctx.fillText(l1, x, H - 18);
+      ctx.fillText(l2, x, H - 4);
+    }
+  } else if (options.xLabels && options.xLabels.length === n) {
     ctx.fillStyle = '#5f6368';
     ctx.textAlign = 'center';
     ctx.font = labelFont;
     for (let i = 0; i < n; i++) {
       const x = xPos(i);
       ctx.fillText(options.xLabels[i], x, H - 4);
-  }
-}
-
-// draw series (round caps/joins for visibility)
-const palette = options.palette || ['#188038', '#f29c1f', '#1a73e8', '#d93025'];
-seriesArr.forEach((s, idx) => {
-  const color = s.color || palette[idx % palette.length];
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2.5;
-  ctx.lineJoin = 'round';
-  ctx.lineCap  = 'round';
-
-  ctx.beginPath();
-  (s.data || []).forEach((v, i) => {
-    const x = xPos(i), y = yPos(v);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // points
-  ctx.fillStyle = color;
-  (s.data || []).forEach((v, i) => {
-    const x = xPos(i), y = yPos(v);
-    ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  // end-of-line label
-  if (options.endLabels !== false) {
-    for (let i = (s.data?.length || 0) - 1; i >= 0; i--) {
-      const v = s.data[i];
-      if (Number.isFinite(v)) {
-        const x = xPos(i), y = yPos(v);
-        ctx.fillStyle = color;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = labelFont;
-        const label = s.name || `Series ${idx + 1}`;
-        ctx.fillText(` ${label}`, x + 8, y);
-        break;
-      }
     }
   }
-});
-  
-  // optional HTML legend target
+
+  // draw series
+  const palette = options.palette || ['#188038', '#f29c1f', '#1a73e8', '#d93025'];
+  seriesArr.forEach((s, idx) => {
+    const color = s.color || palette[idx % palette.length];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap  = 'round';
+
+    ctx.beginPath();
+    (s.data || []).forEach((v, i) => {
+      const x = xPos(i), y = yPos(v);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    (s.data || []).forEach((v, i) => {
+      const x = xPos(i), y = yPos(v);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    if (options.endLabels !== false) {
+      for (let i = (s.data?.length || 0) - 1; i >= 0; i--) {
+        const v = s.data[i];
+        if (Number.isFinite(v)) {
+          const x = xPos(i), y = yPos(v);
+          ctx.fillStyle = color;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.font = labelFont;
+          const label = s.name || `Series ${idx + 1}`;
+          ctx.fillText(` ${label}`, x + 8, y);
+          break;
+        }
+      }
+    }
+  });
+
   if (options.legendEl) {
     options.legendEl.innerHTML = seriesArr.map((s, idx) => {
       const c = s.color || palette[idx % palette.length];
@@ -247,6 +243,60 @@ seriesArr.forEach((s, idx) => {
     else m = 10;
     return m * pow10;
   }
+} // ← end of drawLineChart
+
+// 💿 Top-level donut helper (now *outside* drawLineChart)
+function drawDonutChart(canvas, percent, opts = {}) {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const dpr = isPrinting ? 1 : (window.devicePixelRatio || 1);
+  const W = canvas.clientWidth  || canvas.width  || 220;
+  const H = canvas.clientHeight || canvas.height || 180;
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W / 2;
+  const cy = H / 2;
+  const outer = Math.min(W, H) / 2 - 8;
+  const inner = outer * 0.6;
+
+  const pctRaw = Number(percent) || 0;
+  const pct = Math.max(0, Math.min(100, pctRaw));
+  const angle = (pct / 100) * Math.PI * 2;
+
+  const baseColor = opts.baseColor || '#e0e0e0';
+  const fillColor = opts.fillColor || '#d93025';
+
+  // base ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, outer, 0, Math.PI * 2);
+  ctx.arc(cx, cy, inner, Math.PI * 2, 0, true);
+  ctx.closePath();
+  ctx.fillStyle = baseColor;
+  ctx.fill();
+
+  // shrink wedge
+  if (pct > 0) {
+    const start = -Math.PI / 2;
+    const end   = start + angle;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outer, start, end);
+    ctx.arc(cx, cy, inner, end, start, true);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+  }
+
+  // center label
+  ctx.fillStyle = '#202124';
+  ctx.font = (isPrinting ? '12px' : '14px') + ' system-ui, -apple-system, Segoe UI, Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(pct.toFixed(1) + '%', cx, cy);
 }
 
 function drawPill(ctx, xCenter, yBaseline, text, bg) {
@@ -426,6 +476,53 @@ drawLineChart(
       <td>${fmtMoney(it.units)}</td>
     </tr>
   `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+  // ─── Shrink vs Sales: last week + last 30 days ──────────────────────
+  const shrink = await getJSON(`/api/dept-sales/shrink-metrics?subdept=${encodeURIComponent(subdept)}`);
+  cache.shrink = shrink;
+
+  if (shrink && shrink.lastWeek) {
+    const pct = shrink.lastWeek.percent || 0;
+    drawDonutChart(shrinkWeekCanvas, pct, {
+      baseColor: '#e0e0e0',
+      fillColor: '#d93025' // red for last week
+    });
+    if (shrinkWeekPctEl) {
+      shrinkWeekPctEl.textContent = pct.toFixed(1) + '%';
+    }
+    topShrinkWeekTbody.innerHTML = (shrink.lastWeek.topItems || []).map(it => `
+      <tr>
+        <td>${escapeHtml(it.code || '')}</td>
+        <td>${escapeHtml(it.brand || '')}</td>
+        <td>${escapeHtml(it.description || '')}</td>
+        <td>${fmtMoney2(it.amount)}</td>
+      </tr>
+    `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+  } else {
+    if (shrinkWeekPctEl) shrinkWeekPctEl.textContent = '—';
+    topShrinkWeekTbody.innerHTML = `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+  }
+
+  if (shrink && shrink.last30) {
+    const pct30 = shrink.last30.percent || 0;
+    drawDonutChart(shrink30Canvas, pct30, {
+      baseColor: '#e0e0e0',
+      fillColor: '#f29c1f' // orange for 30-day window
+    });
+    if (shrink30PctEl) {
+      shrink30PctEl.textContent = pct30.toFixed(1) + '%';
+    }
+    topShrink30Tbody.innerHTML = (shrink.last30.topItems || []).map(it => `
+      <tr>
+        <td>${escapeHtml(it.code || '')}</td>
+        <td>${escapeHtml(it.brand || '')}</td>
+        <td>${escapeHtml(it.description || '')}</td>
+        <td>${fmtMoney2(it.amount)}</td>
+      </tr>
+    `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+  } else {
+    if (shrink30PctEl) shrink30PctEl.textContent = '—';
+    topShrink30Tbody.innerHTML = `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+  }
 }
 
 btn.addEventListener('click', run);
@@ -549,6 +646,19 @@ drawLineChart(
   ],
   { xPills, legendEl: compareLegend, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
 );
+  // Shrink donuts: re-draw at new size (no refetch)
+    if (cache.shrink && cache.shrink.lastWeek) {
+      drawDonutChart(shrinkWeekCanvas, cache.shrink.lastWeek.percent || 0, {
+        baseColor: '#e0e0e0',
+        fillColor: '#d93025'
+      });
+    }
+    if (cache.shrink && cache.shrink.last30) {
+      drawDonutChart(shrink30Canvas, cache.shrink.last30.percent || 0, {
+        baseColor: '#e0e0e0',
+        fillColor: '#f29c1f'
+      });
+    }
   });
 }, { passive:true });
 })();
