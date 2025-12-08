@@ -34,6 +34,12 @@ function fmtMoney2(n){
   }).format(n);
 }
 
+function fmtPercent1(n){
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  return v.toFixed(1) + '%';
+}
+
 // very small line chart helper (auto y-bounds + end-of-line labels)
 function drawLineChart(canvas, seriesArr, options = {}) {
   if (!canvas) return;
@@ -481,7 +487,7 @@ drawLineChart(
   console.log('shrink metrics JSON:', shrink);
   cache.shrink = shrink;
   
-  if (shrink && shrink.lastWeek) {
+    if (shrink && shrink.lastWeek) {
     const pct = shrink.lastWeek.percent || 0;
     drawDonutChart(shrinkWeekCanvas, pct, {
       baseColor: '#27F573',  // green = sales
@@ -496,14 +502,22 @@ drawLineChart(
         <td>${escapeHtml(it.brand || '')}</td>
         <td>${escapeHtml(it.description || '')}</td>
         <td>${fmtMoney2(it.amount)}</td>
+        <td>${fmtPercent1(it.pctOfSales)}</td>
       </tr>
-    `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+    `).join('') || `<tr><td colspan="5" class="muted">No data.</td></tr>`;
   } else {
     if (shrinkWeekPctEl) shrinkWeekPctEl.textContent = '—';
-    topShrinkWeekTbody.innerHTML = `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+    topShrinkWeekTbody.innerHTML = `<tr><td colspan="5" class="muted">No data.</td></tr>`;
   }
 
   if (shrink && shrink.last30) {
+    const pct30 = shrink.last30.percent || 0;
+    drawDonutChart(shrink30Canvas, pct30, {
+      baseColor: '#27EEF5',  // blue = sales
+      fillColor: '#d93025'   // red = shrink
+    });
+    
+      if (shrink && shrink.last30) {
     const pct30 = shrink.last30.percent || 0;
     drawDonutChart(shrink30Canvas, pct30, {
       baseColor: '#27EEF5',  // blue = sales
@@ -518,11 +532,12 @@ drawLineChart(
         <td>${escapeHtml(it.brand || '')}</td>
         <td>${escapeHtml(it.description || '')}</td>
         <td>${fmtMoney2(it.amount)}</td>
+        <td>${fmtPercent1(it.pctOfSales)}</td>
       </tr>
-    `).join('') || `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+    `).join('') || `<tr><td colspan="5" class="muted">No data.</td></tr>`;
   } else {
     if (shrink30PctEl) shrink30PctEl.textContent = '—';
-    topShrink30Tbody.innerHTML = `<tr><td colspan="4" class="muted">No data.</td></tr>`;
+    topShrink30Tbody.innerHTML = `<tr><td colspan="5" class="muted">No data.</td></tr>`;
   }
 }
 
