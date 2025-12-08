@@ -502,7 +502,7 @@ drawLineChart(
         <td>${escapeHtml(it.brand || '')}</td>
         <td>${escapeHtml(it.description || '')}</td>
         <td>${fmtMoney2(it.amount)}</td>
-        <td>${fmtPercent1(it.pctOfSales)}</td>
+        <td>${fmtMoney2(it.sales)}</td>
       </tr>
     `).join('') || `<tr><td colspan="5" class="muted">No data.</td></tr>`;
   } else {
@@ -525,7 +525,7 @@ drawLineChart(
         <td>${escapeHtml(it.brand || '')}</td>
         <td>${escapeHtml(it.description || '')}</td>
         <td>${fmtMoney2(it.amount)}</td>
-        <td>${fmtPercent1(it.pctOfSales)}</td>
+        <td>${fmtMoney2(it.sales)}</td>
       </tr>
     `).join('') || `<tr><td colspan="5" class="muted">No data.</td></tr>`;
   } else {
