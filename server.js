@@ -672,6 +672,33 @@ function sumAmountBetween({ start, end, subdept }) {
   return Number(row?.total || 0);
 }
 
+function sumAmountByItemBetween({ start, end, subdept, codes }) {
+  if (!codes || !codes.length) return new Map();
+
+  const placeholders = codes.map(() => '?').join(',');
+  const base = `
+    SELECT item_code AS code,
+           SUM(amount_sum) AS amount
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ?`;
+  const deptFilter = (subdept && subdept !== 'all') ? ` AND subdept_no = ?` : '';
+  const sql = base + deptFilter + ` AND item_code IN (${placeholders})
+    GROUP BY item_code`;
+
+  const params = [start, end];
+  if (subdept && subdept !== 'all') {
+    params.push(Number(subdept));
+  }
+  params.push(...codes);
+
+  const rows = db.prepare(sql).all(...params);
+  const map = new Map();
+  for (const r of rows) {
+    map.set(r.code, Number(r.amount || 0));
+  }
+  return map;
+}
+
 function dailySeriesBetween({ start, end, subdept }) {
   const sqlAll = `
     SELECT date_iso AS d, SUM(amount_sum) AS amt
@@ -903,7 +930,7 @@ app.get('/api/dept-sales/shrink-metrics', async (req, res) => {
   const end30   = toDate(weekEnd);
   const start30 = fmtDate(addDays(end30, -29)); // include end day → 30 days total
 
-  try {
+    try {
     const [shrinkWeek, shrink30] = await Promise.all([
       fetchShrinkSummary({ subdept, start: weekStart, end: weekEnd }),
       fetchShrinkSummary({ subdept, start: start30,   end: weekEnd })
@@ -915,6 +942,45 @@ app.get('/api/dept-sales/shrink-metrics', async (req, res) => {
     const pctWeek = salesWeek > 0 ? (shrinkWeek.total / salesWeek) * 100 : 0;
     const pct30   = sales30   > 0 ? (shrink30.total   / sales30)   * 100 : 0;
 
+    // --- NEW: per-item sales + pct of sales ---
+
+    const weekCodes = (shrinkWeek.items || []).map(it => it.code).filter(Boolean);
+    const days30Codes = (shrink30.items || []).map(it => it.code).filter(Boolean);
+
+    const weekSalesByItem = sumAmountByItemBetween({
+      start: weekStart,
+      end:   weekEnd,
+      subdept,
+      codes: weekCodes
+    });
+
+    const days30SalesByItem = sumAmountByItemBetween({
+      start: start30,
+      end:   weekEnd,
+      subdept,
+      codes: days30Codes
+    });
+
+    const topItemsWeek = (shrinkWeek.items || []).map(it => {
+      const sales = weekSalesByItem.get(it.code) || 0;
+      const pctOfSales = sales > 0 ? (it.amount / sales) * 100 : null;
+      return {
+        ...it,
+        sales,
+        pctOfSales
+      };
+    });
+
+    const topItems30 = (shrink30.items || []).map(it => {
+      const sales = days30SalesByItem.get(it.code) || 0;
+      const pctOfSales = sales > 0 ? (it.amount / sales) * 100 : null;
+      return {
+        ...it,
+        sales,
+        pctOfSales
+      };
+    });
+
     res.json({
       lastWeek: {
         start: weekStart,
@@ -922,7 +988,7 @@ app.get('/api/dept-sales/shrink-metrics', async (req, res) => {
         sales: salesWeek,
         shrink: shrinkWeek.total,
         percent: pctWeek,
-        topItems: shrinkWeek.items || []
+        topItems: topItemsWeek
       },
       last30: {
         start: start30,
@@ -930,7 +996,7 @@ app.get('/api/dept-sales/shrink-metrics', async (req, res) => {
         sales: sales30,
         shrink: shrink30.total,
         percent: pct30,
-        topItems: shrink30.items || []
+        topItems: topItems30
       }
     });
   } catch (err) {
