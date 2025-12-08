@@ -650,13 +650,13 @@ drawLineChart(
   // Shrink donuts: re-draw at new size (no refetch)
         if (cache.shrink && cache.shrink.lastWeek) {
       drawDonutChart(shrinkWeekCanvas, cache.shrink.lastWeek.percent || 0, {
-        baseColor: '#188038',  // green = sales
+        baseColor: '#27F573',  // green = sales
         fillColor: '#d93025'   // red = shrink
       });
     }
     if (cache.shrink && cache.shrink.last30) {
       drawDonutChart(shrink30Canvas, cache.shrink.last30.percent || 0, {
-        baseColor: '#1a73e8',  // blue = sales
+        baseColor: '#27EEF5',  // blue = sales
         fillColor: '#d93025'   // red = shrink
       });
     }
