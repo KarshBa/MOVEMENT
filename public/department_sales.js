@@ -484,7 +484,7 @@ drawLineChart(
   if (shrink && shrink.lastWeek) {
     const pct = shrink.lastWeek.percent || 0;
     drawDonutChart(shrinkWeekCanvas, pct, {
-      baseColor: '#188038',  // green = sales
+      baseColor: '#27F573',  // green = sales
       fillColor: '#d93025'   // red = shrink
     });
     if (shrinkWeekPctEl) {
@@ -506,7 +506,7 @@ drawLineChart(
   if (shrink && shrink.last30) {
     const pct30 = shrink.last30.percent || 0;
     drawDonutChart(shrink30Canvas, pct30, {
-      baseColor: '#1a73e8',  // blue = sales
+      baseColor: '#27EEF5',  // blue = sales
       fillColor: '#d93025'   // red = shrink
     });
     if (shrink30PctEl) {
