@@ -509,14 +509,7 @@ drawLineChart(
     if (shrinkWeekPctEl) shrinkWeekPctEl.textContent = '—';
     topShrinkWeekTbody.innerHTML = `<tr><td colspan="5" class="muted">No data.</td></tr>`;
   }
-
-  if (shrink && shrink.last30) {
-    const pct30 = shrink.last30.percent || 0;
-    drawDonutChart(shrink30Canvas, pct30, {
-      baseColor: '#27EEF5',  // blue = sales
-      fillColor: '#d93025'   // red = shrink
-    });
-    
+  
       if (shrink && shrink.last30) {
     const pct30 = shrink.last30.percent || 0;
     drawDonutChart(shrink30Canvas, pct30, {
