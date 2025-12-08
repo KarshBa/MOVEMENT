@@ -90,6 +90,41 @@
       <canvas id="compareChart" role="img" aria-label="Current week sales compared to previous week, day by day"></canvas>
       <div id="compareLegend" class="muted" style="margin-top:.25rem;"></div>
     </div>
+	
+	<div class="card" id="top10Card">
+      <div class="legend"><strong>Top 10 items by sales last week ($)</strong></div>
+      <div class="table-scroll">
+        <table id="top10" style="width:100%;">
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Brand</th>
+              <th>Description</th>
+              <th>Amount ($)</th>
+            </tr>
+          </thead>
+          <tbody id="top10Body"></tbody>
+        </table>
+      </div>
+    </div>
+	
+        <div class="card" id="top10UnitsCard">
+      <div class="legend"><strong>Top 10 items by units last week (U)</strong></div>
+      <div class="table-scroll">
+        <table id="top10Units" style="width:100%;">
+          <thead>
+            <tr>
+              <th>Item Code</th>
+              <th>Brand</th>
+              <th>Description</th>
+              <th>Units (U)</th>
+            </tr>
+          </thead>
+          <tbody id="top10UnitsBody"></tbody>
+        </table>
+      </div>
+    </div>
+	
           <div class="card" id="shrinkDonutsCard">
       <div class="legend"><strong>Shrink vs Sales</strong></div>
       <div class="shrink-row">
@@ -143,38 +178,7 @@
         </table>
       </div>
     </div>
-    <div class="card" id="top10Card">
-      <div class="legend"><strong>Top 10 items by sales last week ($)</strong></div>
-      <div class="table-scroll">
-        <table id="top10" style="width:100%;">
-          <thead>
-            <tr>
-              <th>Item Code</th>
-              <th>Brand</th>
-              <th>Description</th>
-              <th>Amount ($)</th>
-            </tr>
-          </thead>
-          <tbody id="top10Body"></tbody>
-        </table>
-      </div>
-    </div>
-        <div class="card" id="top10UnitsCard">
-      <div class="legend"><strong>Top 10 items by units last week (U)</strong></div>
-      <div class="table-scroll">
-        <table id="top10Units" style="width:100%;">
-          <thead>
-            <tr>
-              <th>Item Code</th>
-              <th>Brand</th>
-              <th>Description</th>
-              <th>Units (U)</th>
-            </tr>
-          </thead>
-          <tbody id="top10UnitsBody"></tbody>
-        </table>
-      </div>
-    </div>
+	
   </main>
   <script type="module" src="./department_sales.js?v=2025.12.07-4"></script>
 </body>
