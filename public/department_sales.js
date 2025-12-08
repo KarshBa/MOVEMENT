@@ -484,8 +484,8 @@ drawLineChart(
   if (shrink && shrink.lastWeek) {
     const pct = shrink.lastWeek.percent || 0;
     drawDonutChart(shrinkWeekCanvas, pct, {
-      baseColor: '#e0e0e0',
-      fillColor: '#d93025' // red for last week
+      baseColor: '#188038',  // green = sales
+      fillColor: '#d93025'   // red = shrink
     });
     if (shrinkWeekPctEl) {
       shrinkWeekPctEl.textContent = pct.toFixed(1) + '%';
@@ -506,8 +506,8 @@ drawLineChart(
   if (shrink && shrink.last30) {
     const pct30 = shrink.last30.percent || 0;
     drawDonutChart(shrink30Canvas, pct30, {
-      baseColor: '#e0e0e0',
-      fillColor: '#f29c1f' // orange for 30-day window
+      baseColor: '#1a73e8',  // blue = sales
+      fillColor: '#d93025'   // red = shrink
     });
     if (shrink30PctEl) {
       shrink30PctEl.textContent = pct30.toFixed(1) + '%';
@@ -648,16 +648,16 @@ drawLineChart(
   { xPills, legendEl: compareLegend, endGap: 12, pad: { l: 52, r: 36, t: 10, b: 48 } }
 );
   // Shrink donuts: re-draw at new size (no refetch)
-    if (cache.shrink && cache.shrink.lastWeek) {
+        if (cache.shrink && cache.shrink.lastWeek) {
       drawDonutChart(shrinkWeekCanvas, cache.shrink.lastWeek.percent || 0, {
-        baseColor: '#e0e0e0',
-        fillColor: '#d93025'
+        baseColor: '#188038',  // green = sales
+        fillColor: '#d93025'   // red = shrink
       });
     }
     if (cache.shrink && cache.shrink.last30) {
       drawDonutChart(shrink30Canvas, cache.shrink.last30.percent || 0, {
-        baseColor: '#e0e0e0',
-        fillColor: '#f29c1f'
+        baseColor: '#1a73e8',  // blue = sales
+        fillColor: '#d93025'   // red = shrink
       });
     }
   });
