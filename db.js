@@ -38,6 +38,10 @@ db.exec(`
 `);
 
 db.exec(`
+  CREATE INDEX IF NOT EXISTS ix_raw_vendor ON raw_transactions(vendor_name COLLATE NOCASE);
+`);
+
+db.exec(`
   CREATE INDEX IF NOT EXISTS ix_raw_date ON raw_transactions(date_iso);
   CREATE INDEX IF NOT EXISTS ix_raw_itemcode ON raw_transactions(item_code);
   CREATE INDEX IF NOT EXISTS ix_raw_date_item ON raw_transactions(date_iso, item_code);
@@ -111,10 +115,30 @@ export function searchBrands(q) {
   `).all({ pat });
 }
 
+export function searchVendors(q) {
+  // Return up to 20 vendors matching q (case-insensitive), ordered by popularity
+  const pat = `%${String(q || '').trim().replace(/[%_]/g, s => '\\' + s)}%`;
+  return db.prepare(`
+    SELECT vendor_name AS vendor, COUNT(*) AS cnt
+    FROM raw_transactions
+    WHERE vendor_name <> '' AND vendor_name LIKE @pat ESCAPE '\\'
+    GROUP BY vendor_name
+    ORDER BY cnt DESC, vendor COLLATE NOCASE ASC
+    LIMIT 20
+  `).all({ pat });
+}
+
 function buildWhereForBrand(params, where) {
   if (params.brand) {
     where.push(`item_brand LIKE @brand ESCAPE '\\' COLLATE NOCASE`);
     params.brand = `%${params.brand.replace(/[%_]/g, s => '\\' + s)}%`;
+  }
+}
+
+function buildWhereForVendor(params, where) {
+  if (params.vendor) {
+    where.push(`vendor_name LIKE @vendor ESCAPE '\\' COLLATE NOCASE`);
+    params.vendor = `%${params.vendor.replace(/[%_]/g, s => '\\' + s)}%`;
   }
 }
 
@@ -148,7 +172,8 @@ export function rangeAggregate(params) {
   const base = buildSelectAggBase();
   const where = [];
   buildWhereForSubdept(params, where);
-  buildWhereForBrand(params, where); // <--
+  buildWhereForBrand(params, where);
+  buildWhereForVendor(params, where);
   const sql = [
     base,
     where.length ? 'AND ' + where.join(' AND ') : '',
@@ -163,7 +188,8 @@ export function upcsAggregate(params, upcList) {
   const base = buildSelectAggBase();
   const where = [];
   buildWhereForSubdept(params, where);
-  buildWhereForBrand(params, where); // <--
+  buildWhereForBrand(params, where);
+  buildWhereForVendor(params, where);
 
   const placeholders = upcList.map((_, i) => `@upc${i}`).join(',');
   const bindings = {};
