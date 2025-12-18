@@ -86,7 +86,7 @@ app.use(basicAuth);
 app.use(express.static(PUBLIC_DIR, {
   etag: true,
   maxAge: '7d',
-  index: ['admin.html', 'item_movement.html', 'department_sales.html']
+  index: ['admin.html', 'item_movement.html', 'department_sales.html', 'vendor_review.html']
 }));
 
 // ---- Multer upload (disk to tmp)
@@ -1031,6 +1031,93 @@ app.get('/api/range', (req, res) => {
 
   const rows = rangeAggregate(params);
   res.json(rows);
+});
+
+// ===== Vendor Review routes =====
+
+// GET /api/vendor-review/vendors?subdept=###&start=YYYY-MM-DD&end=YYYY-MM-DD
+app.get('/api/vendor-review/vendors', (req, res) => {
+  const vr = validateDateRange(req.query);
+  if (vr.error) return res.status(400).json({ error: vr.error });
+
+  const subdept = Number.parseInt(String(req.query.subdept || ''), 10);
+  if (!Number.isFinite(subdept)) return res.status(400).json({ error: 'subdept is required (number)' });
+
+  const rows = db.prepare(`
+    SELECT
+      vendor_name AS vendor,
+      SUM(amount_sum) AS amount
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ?
+      AND subdept_no = ?
+      AND vendor_name <> ''
+    GROUP BY vendor_name
+    ORDER BY amount DESC, vendor COLLATE NOCASE ASC
+  `).all(vr.start, vr.end, subdept);
+
+  const vendors = rows.map(r => ({
+    vendor: r.vendor,
+    amount: Number(r.amount || 0)
+  }));
+
+  const totalSales = vendors.reduce((a, v) => a + (v.amount || 0), 0);
+
+  res.json({ vendors, totalSales, range: { start: vr.start, end: vr.end }, subdept });
+});
+
+
+// GET /api/vendor-review/items?subdept=###&vendor=NAME&start=YYYY-MM-DD&end=YYYY-MM-DD
+app.get('/api/vendor-review/items', async (req, res) => {
+  const vr = validateDateRange(req.query);
+  if (vr.error) return res.status(400).json({ error: vr.error });
+
+  const subdept = Number.parseInt(String(req.query.subdept || ''), 10);
+  const vendor = String(req.query.vendor || '').trim();
+  if (!Number.isFinite(subdept)) return res.status(400).json({ error: 'subdept is required (number)' });
+  if (!vendor) return res.status(400).json({ error: 'vendor is required' });
+
+  // Aggregate rows like item_movement, but filtered to subdept + vendor
+  const rows = db.prepare(`
+    SELECT
+      item_code                             AS "Item-Code",
+      MAX(item_brand)                       AS "Item-Brand",
+      MAX(item_pos_desc)                    AS "Item-POS description",
+      MAX(subdept_no)                       AS "Sub-department-Number",
+      MAX(subdept_desc)                     AS "Sub-department-Description",
+      MAX(category_no)                      AS "Category-Number",
+      MAX(category_desc)                    AS "Category-Description",
+      MAX(vendor_id)                        AS "Vendor-ID",
+      MAX(vendor_name)                      AS "Vendor-Name",
+      ROUND(SUM(units_sum), 6)              AS "Units-Sum",
+      ROUND(SUM(amount_sum), 2)             AS "Amount-Sum"
+    FROM raw_transactions
+    WHERE date_iso BETWEEN ? AND ?
+      AND subdept_no = ?
+      AND vendor_name = ? COLLATE NOCASE
+    GROUP BY item_code
+    ORDER BY "Amount-Sum" DESC
+  `).all(vr.start, vr.end, subdept, vendor);
+
+  // Merge shrink $ per item (from inventory shrink service, if configured)
+  let shrinkMap = new Map(); // code -> shrink$
+  try {
+    const shrink = await fetchShrinkSummary({ subdept: String(subdept), start: vr.start, end: vr.end });
+    const items = Array.isArray(shrink?.items) ? shrink.items : [];
+    for (const it of items) {
+      if (it?.code) shrinkMap.set(String(it.code), Number(it.amount || 0));
+    }
+  } catch (e) {
+    // If shrink service fails, we still return sales rows (shrink defaults to 0)
+    console.warn('[vendor-review] shrink fetch failed:', e.message);
+  }
+
+  const out = rows.map(r => {
+    const code = String(r["Item-Code"] || '');
+    const shrink = shrinkMap.get(code) || 0;
+    return { ...r, "Shrink ($)": Number(shrink || 0) };
+  });
+
+  res.json({ rows: out, range: { start: vr.start, end: vr.end }, subdept, vendor });
 });
 
 app.post('/api/search-upcs', (req, res) => {
