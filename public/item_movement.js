@@ -121,7 +121,7 @@ function currentFilters() {
     params.subdept_end = Number(selEnd.value);
   }
 
-    const brand = brandInput?.value?.trim();
+  const brand = brandInput?.value?.trim();
   if (brand) params.brand = brand;
 
   const vendor = vendorInput?.value?.trim();
@@ -169,7 +169,7 @@ brandList?.addEventListener('click', (e) => {
   brandInput.value = li.getAttribute('data-v') || '';
   hideBrandList();
   // optional: auto-run with the chosen brand
-  runRange();
+  runQuery();
 });
 
 document.addEventListener('click', (e) => {
@@ -215,7 +215,7 @@ vendorList?.addEventListener('click', (e) => {
   vendorInput.value = li.getAttribute('data-v') || '';
   hideVendorList();
   // match Brand behavior
-  runRange();
+  runQuery();
 });
 
 document.addEventListener('click', (e) => {
