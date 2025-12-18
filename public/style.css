@@ -36,6 +36,10 @@ th,td{padding:.6rem;border:1px solid #e0e0e0;font-size:.95rem;text-align:left;}
 th{background:#f1f3f4;}
 
 #results { table-layout: fixed; }
+td.right, th.right { text-align: right; }
+td.shrink-bad {
+  background: #ffd6d6; /* light red */
+}
 
 /* ===== Compact table for small screens (landscape favored) ===== */
 @media (max-width: 900px) and (orientation: landscape) {
