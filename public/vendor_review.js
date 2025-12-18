@@ -218,8 +218,9 @@ function drawMultiDonut(canvas, slices, opts = {}) {
   }
 
   // center text
-  ctx.font = '10px system-ui, -apple-system, Segoe UI, Arial';
-  ctx.fillStyle = '#202124';
+  const labelPx = Math.max(9, Math.round(outer * 0.065));
+  ctx.font = `${labelPx}px system-ui, -apple-system, Segoe UI, Arial`;
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
   const centerText = opts.centerText || '';
   if (centerText) ctx.fillText(centerText, cx, cy);
 
