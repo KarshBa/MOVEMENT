@@ -16,6 +16,9 @@ const btnSearch  = document.getElementById('btnSearchUpcs');
 const brandInput = document.getElementById('brand');
 const brandList  = document.getElementById('brandList');
 
+const vendorInput = document.getElementById('vendor');
+const vendorList  = document.getElementById('vendorList');
+
 const upcTextarea = document.getElementById('upcs');
 const tbody      = document.getElementById('tbody');
 const table      = document.getElementById('resultTable') || document.getElementById('results');
@@ -118,8 +121,11 @@ function currentFilters() {
     params.subdept_end = Number(selEnd.value);
   }
 
-  const brand = brandInput?.value?.trim();
+    const brand = brandInput?.value?.trim();
   if (brand) params.brand = brand;
+
+  const vendor = vendorInput?.value?.trim();
+  if (vendor) params.vendor = vendor;
 
   return params;
 }
@@ -169,6 +175,52 @@ brandList?.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (brandList && !brandList.contains(e.target) && e.target !== brandInput) {
     hideBrandList();
+  }
+});
+
+let vendorDebounce = null;
+
+function hideVendorList() {
+  if (vendorList) {
+    vendorList.style.display = 'none';
+    vendorList.innerHTML = '';
+  }
+}
+
+vendorInput?.addEventListener('input', () => {
+  const q = vendorInput.value.trim();
+  if (vendorDebounce) clearTimeout(vendorDebounce);
+
+  vendorDebounce = setTimeout(async () => {
+    if (!q) return hideVendorList();
+    try {
+      const r = await fetch(`/api/vendors?q=${encodeURIComponent(q)}`, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error('vendors fetch failed');
+      const vendors = await r.json(); // array of strings
+      if (!vendors.length) return hideVendorList();
+
+      vendorList.innerHTML = vendors
+        .map(v => `<li data-v="${escapeHtml(v)}">${escapeHtml(v)}</li>`)
+        .join('');
+      vendorList.style.display = '';
+    } catch {
+      hideVendorList();
+    }
+  }, 200);
+});
+
+vendorList?.addEventListener('click', (e) => {
+  const li = e.target.closest('li[data-v]');
+  if (!li) return;
+  vendorInput.value = li.getAttribute('data-v') || '';
+  hideVendorList();
+  // match Brand behavior
+  runRange();
+});
+
+document.addEventListener('click', (e) => {
+  if (vendorList && !vendorList.contains(e.target) && e.target !== vendorInput) {
+    hideVendorList();
   }
 });
 
@@ -404,10 +456,11 @@ function updateSortHeaders() {
 
  // wire up header sorting when DOM is fully parsed
  document.addEventListener('DOMContentLoaded', () => {
-  // ensure brand list has the right class for white background styles
+  // ensure lists have the right class for white background styles
   brandList?.classList.add('suggest-list');
-   if (!headersWired) initHeaderSorting();
- });
+  vendorList?.classList.add('suggest-list');
+  if (!headersWired) initHeaderSorting();
+});
 
 (function initDefaults(){
   // show/hide advanced wrapper on load
