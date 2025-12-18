@@ -27,6 +27,33 @@ const NF_MNY0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const NF_MNY2 = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const NF_INT  = new Intl.NumberFormat();
 
+// --- hover tooltip (fixed-position div) ---
+const hoverTip = (() => {
+  const el = document.createElement('div');
+  el.style.position = 'fixed';
+  el.style.zIndex = '9999';
+  el.style.pointerEvents = 'none';
+  el.style.display = 'none';
+  el.style.background = 'rgba(255,255,255,.98)';
+  el.style.border = '1px solid rgba(0,0,0,.15)';
+  el.style.borderRadius = '8px';
+  el.style.padding = '6px 8px';
+  el.style.boxShadow = '0 6px 18px rgba(0,0,0,.18)';
+  el.style.font = '12px system-ui, -apple-system, Segoe UI, Arial';
+  el.style.color = '#202124';
+  document.body.appendChild(el);
+
+  function show(text, clientX, clientY) {
+    el.textContent = text;
+    el.style.display = 'block';
+    // offset so it doesn't sit under the cursor
+    el.style.left = (clientX + 12) + 'px';
+    el.style.top  = (clientY + 14) + 'px';
+  }
+  function hide() { el.style.display = 'none'; }
+  return { show, hide };
+})();
+
 let vendorSlices = []; // for click-hit testing
 let itemSlices = [];
 let currentRows = [];
@@ -127,8 +154,9 @@ function drawMultiDonut(canvas, slices, opts = {}) {
   ctx.clearRect(0,0,W,H);
 
   const cx = W/2, cy = H/2;
-  const outer = Math.min(W,H)/2 - 10;
-  const inner = outer * 0.60;
+  // Bigger donut: use more of the canvas + slightly thicker ring
+  const outer = Math.min(W, H) / 2 - 4;
+  const inner = outer * 0.52;
 
   const total = slices.reduce((a,s)=>a + (s.value||0), 0) || 1;
   const colors = makePalette(slices.length);
@@ -190,7 +218,7 @@ function drawMultiDonut(canvas, slices, opts = {}) {
   }
 
   // center text
-  ctx.font = '13px system-ui, -apple-system, Segoe UI, Arial';
+  ctx.font = '10px system-ui, -apple-system, Segoe UI, Arial';
   ctx.fillStyle = '#202124';
   const centerText = opts.centerText || '';
   if (centerText) ctx.fillText(centerText, cx, cy);
@@ -199,21 +227,31 @@ function drawMultiDonut(canvas, slices, opts = {}) {
 }
 
 function donutHitTest(x, y, slices) {
-  // x,y in canvas CSS pixels
+  if (!slices || !slices.length) return null;
+
   for (const s of slices) {
     const dx = x - s.cx;
     const dy = y - s.cy;
     const r = Math.hypot(dx, dy);
     if (r < s.inner || r > s.outer) continue;
 
-    let ang = Math.atan2(dy, dx);         // -pi..pi
-    if (ang < -Math.PI/2) ang += Math.PI*2; // normalize around our start
-    const a = ang;
+    // angle in radians, normalize into [0, 2π)
+    let ang = Math.atan2(dy, dx);
+    if (ang < 0) ang += Math.PI * 2;
 
-    // normalize to same range as a0/a1 (which are around -pi/2..3pi/2)
-    // easiest: shift by +2pi if needed
-    const aNorm = (a < s.a0) ? (a + Math.PI*2) : a;
-    if (aNorm >= s.a0 && aNorm <= s.a1) return s;
+    // Our drawing typically starts at -π/2, so shift angles by +π/2
+    let a = ang + Math.PI / 2;
+    if (a >= Math.PI * 2) a -= Math.PI * 2;
+
+    // Normalize slice bounds into [0, 2π) too
+    let a0 = s.a0 + Math.PI / 2;
+    let a1 = s.a1 + Math.PI / 2;
+
+    // handle wrap
+    while (a0 < 0) { a0 += Math.PI * 2; a1 += Math.PI * 2; }
+    while (a > a1) a -= Math.PI * 2;
+
+    if (a >= a0 && a <= a1) return s;
   }
   return null;
 }
@@ -364,6 +402,24 @@ async function loadItemsForVendor() {
   setInfo('');
 }
 
+function wireDonutHover(canvas, getSlices) {
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const slices = getSlices();
+    const hit = donutHitTest(x, y, slices);
+    if (!hit) return hoverTip.hide();
+
+    const dollars = `$${fmtMoney0(hit.value || 0)}`;
+    hoverTip.show(`${hit.label} — ${dollars}`, e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('mouseleave', () => hoverTip.hide());
+  canvas.addEventListener('mousedown', () => hoverTip.hide());
+}
+
 function wireDonutClicks() {
   donutVendors.addEventListener('click', (e) => {
     const rect = donutVendors.getBoundingClientRect();
@@ -388,6 +444,8 @@ async function init() {
 
   initHeaderSorting();
   wireDonutClicks();
+  wireDonutHover(donutVendors, () => vendorSlices);
+  wireDonutHover(donutItems,   () => itemSlices);
 
   btnRun.addEventListener('click', () => loadVendorsAndRender().catch(err => setInfo(err.message)));
   vendorSel.addEventListener('change', () => loadItemsForVendor().catch(err => setInfo(err.message)));
