@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Vendor Review</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self'">
+  <link rel="stylesheet" href="./style.css?v=2025.12.18-vendorreview1" />
+  <style>
+    .card { background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:0.75rem; margin:0.75rem 0; }
+    .donut-row { display:flex; gap:1rem; flex-wrap:wrap; align-items:stretch; }
+    .donut-col { flex:1 1 320px; min-width:280px; }
+    .donut-title { font-weight:700; margin:0 0 .5rem; }
+    .donut-sub { color:#5f6368; font-size:.85rem; margin:.25rem 0 .5rem; }
+    .donut-canvas { width:100%; height:320px; display:block; }
+    @media (max-width: 900px) {
+      .donut-canvas { height:280px; }
+    }
+    .hint { color:#5f6368; font-size:.85rem; margin-top:.25rem; }
+    .right { text-align:right; }
+  </style>
+</head>
+<body>
+  <header><h1>Vendor Review</h1></header>
+
+  <main>
+    <section class="flex" aria-label="filters">
+      <div class="input-group" style="max-width:420px;">
+        <label for="subdept">Sub-department</label>
+        <select id="subdept"></select>
+      </div>
+
+      <div class="input-group" style="max-width:220px;">
+        <label for="start">Start date</label>
+        <input id="start" type="date" />
+      </div>
+
+      <div class="input-group" style="max-width:220px;">
+        <label for="end">End date</label>
+        <input id="end" type="date" />
+      </div>
+
+      <div class="input-group" style="max-width:520px;">
+        <label for="vendorSel">Vendor (from selected subdept + date range)</label>
+        <select id="vendorSel"></select>
+        <div class="hint">Tip: click a slice on the left donut to select a vendor.</div>
+      </div>
+
+      <button id="btnRun">Submit</button>
+
+      <div class="muted" id="dbEndsWrap" style="margin-left:auto;">
+        Database Ends: <span id="dbEnds">—</span>
+      </div>
+    </section>
+
+    <div id="info" class="page-info">Pick a sub-department and date range, then submit.</div>
+
+    <div class="card">
+      <div class="donut-row">
+        <div class="donut-col">
+          <div class="donut-title">Vendor share of sales ($)</div>
+          <div class="donut-sub" id="leftSub">—</div>
+          <canvas id="donutVendors" class="donut-canvas"></canvas>
+        </div>
+
+        <div class="donut-col">
+          <div class="donut-title">Selected vendor item mix ($)</div>
+          <div class="donut-sub" id="rightSub">—</div>
+          <canvas id="donutItems" class="donut-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="donut-title">Items for selected vendor</div>
+      <div class="table-scroll">
+        <table id="results" style="display:none;">
+          <thead>
+            <tr>
+              <th class="sortable" data-key="Item-Code">Item-Code</th>
+              <th class="sortable" data-key="Item-Brand">Item-Brand</th>
+              <th class="sortable" data-key="Item-POS description">Item-POS description</th>
+              <th class="sortable" data-key="Sub-department-Number">Sub-department-Number</th>
+              <th class="sortable" data-key="Sub-department-Description">Sub-department-Description</th>
+              <th class="sortable" data-key="Category-Number">Category-Number</th>
+              <th class="sortable" data-key="Category-Description">Category-Description</th>
+              <th class="sortable" data-key="Vendor-ID">Vendor-ID</th>
+              <th class="sortable" data-key="Vendor-Name">Vendor-Name</th>
+              <th class="sortable right" data-key="Units-Sum">Units-Sum</th>
+              <th class="sortable right" data-key="Amount-Sum">Amount-Sum</th>
+              <th class="sortable right" data-key="Shrink ($)">Shrink ($)</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script type="module" src="./vendor_review.js?v=2025.12.18-v1"></script>
+</body>
+</html>
