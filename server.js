@@ -21,7 +21,8 @@ import {
   querySubdepartments, rangeAggregate, upcsAggregate, optimize,
   insertUploadMeta,
   queueCreateJob, queueMarkStarted, queueMarkDone, queueMarkError, queueGetJob, queueNextJob,
-  searchBrands // <-- add this
+  searchBrands,
+  searchVendors
 } from './db.js';
 
 process.on('uncaughtException', (err) => {
@@ -589,6 +590,14 @@ app.get('/api/brands', (req, res) => {
   res.json(rows.map(r => r.brand));
 });
 
+// Vendor autocomplete
+app.get('/api/vendors', (req, res) => {
+  const q = String(req.query.q || '').slice(0, 100); // simple guard
+  const rows = searchVendors(q); // from db.js
+  // return array of strings (vendor names)
+  res.json(rows.map(r => r.vendor));
+});
+
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Missing file' });
 
@@ -1018,6 +1027,7 @@ app.get('/api/range', (req, res) => {
   if (req.query.subdept_start) params.subdept_start = Number.parseInt(req.query.subdept_start);
   if (req.query.subdept_end) params.subdept_end = Number.parseInt(req.query.subdept_end);
   if (req.query.brand) params.brand = String(req.query.brand).trim();
+  if (req.query.vendor) params.vendor = String(req.query.vendor).trim();
 
   const rows = rangeAggregate(params);
   res.json(rows);
@@ -1049,6 +1059,8 @@ app.post('/api/search-upcs', (req, res) => {
     params.subdept_start = Number.parseInt(body.subdept_start);
     params.subdept_end = Number.parseInt(body.subdept_end);
   }
+  if (body.brand) params.brand = String(body.brand).trim();
+  if (body.vendor) params.vendor = String(body.vendor).trim();
 
   const rows = upcsAggregate(params, upcList);
   res.json(rows);
@@ -1072,6 +1084,7 @@ app.get('/api/export', (req, res) => {
   if (req.query.subdept_start) params.subdept_start = Number.parseInt(req.query.subdept_start);
   if (req.query.subdept_end) params.subdept_end = Number.parseInt(req.query.subdept_end);
   if (req.query.brand) params.brand = String(req.query.brand).trim();
+  if (req.query.vendor) params.vendor = String(req.query.vendor).trim();
 
   let rows;
 if (req.query.upcs && String(req.query.upcs).trim()) {
