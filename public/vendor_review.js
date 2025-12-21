@@ -100,7 +100,7 @@ async function loadDbEnds() {
 async function loadSubdepartments() {
   const rows = await getJSON('/api/subdepartments');
   subSel.innerHTML =
-    `<option value="">(Choose)</option>` +
+    `<option value="">(Select Sub-Department)</option>` +
     rows.map(r => `<option value="${r.subdept_no}">${escapeHtml(r.label)}</option>`).join('');
 }
 
