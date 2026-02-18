@@ -36,6 +36,7 @@ export function basicAuth(req, res, next) {
     { login: process.env.USER1_USER, password: process.env.USER1_PASS, role: 'user' },
     { login: process.env.USER2_USER, password: process.env.USER2_PASS, role: 'user' },
     { login: process.env.USER3_USER, password: process.env.USER3_PASS, role: 'user' },
+    { login: process.env.USER4_USER, password: process.env.USER4_PASS, role: 'user' },
   ].filter(u => u.login && u.password);
 
   const match = candidates.find(u => u.login === user && u.password === pass);
