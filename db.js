@@ -206,6 +206,66 @@ export function upcsAggregate(params, upcList) {
   return db.prepare(sql).all({ ...params, ...bindings });
 }
 
+// Returns DISTINCT item_code values sold in raw_transactions for date range + optional filters.
+// If upcList is provided and small enough, applies AND item_code IN (...) in SQL for speed.
+export function soldCodesInRange(params, upcList = null) {
+  const start = params?.start;
+  const end   = params?.end;
+  if (!start || !end) return [];
+
+  const where = [];
+  const args = [];
+
+  where.push('date_iso BETWEEN ? AND ?');
+  args.push(start, end);
+
+  if (params.subdept != null && params.subdept !== '') {
+    where.push('subdept_no = ?');
+    args.push(Number(params.subdept));
+  }
+
+  if (params.subdept_start != null && params.subdept_end != null &&
+      params.subdept_start !== '' && params.subdept_end !== '') {
+    const a = Number(params.subdept_start);
+    const b = Number(params.subdept_end);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      where.push('subdept_no BETWEEN ? AND ?');
+      args.push(lo, hi);
+    }
+  }
+
+  if (params.brand) {
+    where.push('item_brand = ? COLLATE NOCASE');
+    args.push(String(params.brand).trim());
+  }
+
+  if (params.vendor) {
+    // In your DB schema, vendor is stored as vendor_name.
+    where.push('vendor_name = ? COLLATE NOCASE');
+    args.push(String(params.vendor).trim());
+  }
+
+  // Optional UPC list limiter (only if manageable)
+  const list = Array.isArray(upcList) ? upcList.map(String).filter(Boolean) : [];
+  const MAX_IN = 900; // conservative for SQLite parameter limits
+  if (list.length && list.length <= MAX_IN) {
+    const ph = list.map(() => '?').join(',');
+    where.push(`item_code IN (${ph})`);
+    args.push(...list);
+  }
+
+  const sql = `
+    SELECT DISTINCT item_code AS code
+    FROM raw_transactions
+    WHERE ${where.join(' AND ')}
+  `;
+
+  const rows = db.prepare(sql).all(...args);
+  return rows.map(r => String(r.code));
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS upload_jobs (
     id            TEXT PRIMARY KEY,
