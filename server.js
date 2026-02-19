@@ -22,7 +22,8 @@ import {
   insertUploadMeta,
   queueCreateJob, queueMarkStarted, queueMarkDone, queueMarkError, queueGetJob, queueNextJob,
   searchBrands,
-  searchVendors
+  searchVendors,
+  soldCodesInRange
 } from './db.js';
 
 process.on('uncaughtException', (err) => {
@@ -86,7 +87,7 @@ app.use(basicAuth);
 app.use(express.static(PUBLIC_DIR, {
   etag: true,
   maxAge: '7d',
-  index: ['admin.html', 'item_movement.html', 'department_sales.html', 'vendor_review.html']
+  index: ['admin.html', 'item_movement.html', 'non_movement.html', 'department_sales.html', 'vendor_review.html']
 }));
 
 // ---- Multer upload (disk to tmp)
@@ -759,6 +760,204 @@ async function fetchShrinkSummary({ subdept, start, end }) {
   return resp.json();
 }
 
+// ===== Master Item List (Item List Handler) integration =====
+const ITEM_LIST_BASE = process.env.ITEM_LIST_BASE || 'https://item-list-handler.onrender.com';
+
+// node-fetch v2 supports { timeout }. We'll keep conservative timeouts.
+const ITEM_LIST_TIMEOUT_MS = Number(process.env.ITEM_LIST_TIMEOUT_MS || 15_000);
+
+function normKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function canon13FromMaster(raw) {
+  // Master list canonUPC already yields 13-digit strings;
+  // but we must tolerate 12/13/raw and canonicalize to 13 digits like Movement.
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  // If 12 digits: treat as UPC-A and add leading 0, dropping check digit behavior is master-side;
+  // for comparisons in Movement, we just need stable 13-digit form.
+  // Use your Movement-style pad13 to be consistent.
+  return pad13(d.length === 12 ? ('0' + d) : d);
+}
+
+function detectMasterCols(sampleRow) {
+  const keys = Object.keys(sampleRow || {});
+  const pick = (aliases) => {
+    const set = new Set(aliases.map(normKey));
+    return keys.find(k => set.has(normKey(k)));
+  };
+
+  // Try to match the aliases you already use in Item List Handler
+  const code = pick(['code','upc','itemcode','maincode','mainitemcode']) || keys[0];
+  const brand = pick(['brand','mainitembrand','itembrand','main item-brand','main item brand']);
+  const desc = pick(['description','desc','mainitemdescription','main item-description','main item description','posdescription','item-posdescription','item-pos description','item-posdescription']);
+  const subNo = pick(['subdepartmentnumber','subdeptnumber','subdepartmentno','subdeptno','totalizer-number','totalizernumber']);
+  const subDesc = pick(['subdepartmentdescription','subdepartmentdesc','subdeptdescription','totalizer-description','totalizerdescription']);
+  const catNo = pick(['categorynumber','category-no','category-number','catnumber','catno']);
+  const catDesc = pick(['categorydescription','category-desc','category-description','catdescription','catdesc']);
+  const vendorId = pick(['vendorid','vendor-id','vendor_id']);
+  const vendorName = pick(['vendorname','vendor-name','vendor','vendor_name']);
+
+  return { code, brand, desc, subNo, subDesc, catNo, catDesc, vendorId, vendorName };
+}
+
+async function fetchJsonWithTimeout(url) {
+  const resp = await fetch(url, { timeout: ITEM_LIST_TIMEOUT_MS });
+  if (!resp.ok) {
+    const t = await resp.text().catch(()=>'');
+    throw new Error(`Item List request failed: ${resp.status} ${resp.statusText}${t ? ' - ' + t : ''}`);
+  }
+  return resp.json();
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Fetch ALL master items (paginated) with a narrow column set once detected.
+async function fetchAllMasterItems() {
+  // 1) probe 1 row to detect columns
+  const probeUrl = new URL('/api/items', ITEM_LIST_BASE);
+  probeUrl.searchParams.set('page', '1');
+  probeUrl.searchParams.set('pageSize', '1');
+
+  const probe = await fetchJsonWithTimeout(probeUrl.toString());
+  const probeRow = probe?.rows?.[0];
+  if (!probeRow) {
+    return { cols: null, rows: [] };
+  }
+
+  const cols = detectMasterCols(probeRow);
+
+  // 2) fetch pages with only columns we care about (if present)
+  const wanted = Object.values(cols).filter(Boolean);
+  const uniqueWanted = Array.from(new Set(wanted));
+
+  const pageSize = Number(process.env.ITEM_LIST_PAGE_SIZE || 2000);
+  const firstUrl = new URL('/api/items', ITEM_LIST_BASE);
+  firstUrl.searchParams.set('page', '1');
+  firstUrl.searchParams.set('pageSize', String(pageSize));
+  if (uniqueWanted.length) firstUrl.searchParams.set('columns', uniqueWanted.join(','));
+
+  const first = await fetchJsonWithTimeout(firstUrl.toString());
+  const total = Number(first?.total || 0);
+  const rows = Array.isArray(first?.rows) ? first.rows.slice() : [];
+
+  const pages = total > 0 ? Math.ceil(total / pageSize) : 1;
+  if (pages > 1) {
+    // Sequential fetch to be gentle to Render + avoid spikes
+    for (let p = 2; p <= pages; p++) {
+      const u = new URL('/api/items', ITEM_LIST_BASE);
+      u.searchParams.set('page', String(p));
+      u.searchParams.set('pageSize', String(pageSize));
+      if (uniqueWanted.length) u.searchParams.set('columns', uniqueWanted.join(','));
+      const j = await fetchJsonWithTimeout(u.toString());
+      if (Array.isArray(j?.rows) && j.rows.length) rows.push(...j.rows);
+    }
+  }
+
+  return { cols, rows };
+}
+
+// Fetch metadata for a UPC universe via /api/bulk-upc (exact matches only)
+async function fetchMasterByUpcs(upcList13) {
+  const codes = Array.from(new Set(upcList13.filter(Boolean)));
+  if (!codes.length) return { cols: null, rows: [] };
+
+  // probe 1 item (via /api/items) to detect cols — bulk-upc returns raw rows, but we need mapping
+  const { cols } = await fetchAllMasterItems().catch(() => ({ cols: null }));
+  // If that failed, we can still return rows but with minimal mapping
+  const useCols = cols || { code: null, brand: null, desc: null, subNo: null, subDesc: null, catNo: null, catDesc: null, vendorId: null, vendorName: null };
+
+  const CHUNK = Number(process.env.ITEM_LIST_BULK_CHUNK || 300);
+  const parts = chunk(codes, CHUNK);
+
+  const rows = [];
+  for (const part of parts) {
+    const u = new URL('/api/bulk-upc', ITEM_LIST_BASE);
+    u.searchParams.set('codes', part.join(','));
+    const j = await fetchJsonWithTimeout(u.toString());
+    const hits = Array.isArray(j?.results) ? j.results : [];
+    if (hits.length) rows.push(...hits);
+  }
+
+  return { cols: useCols, rows };
+}
+
+// Apply optional brand/vendor filters to master rows when those columns exist.
+// Keep it strict-ish: case-insensitive equality after trim.
+function filterMasterRows(rows, cols, { brand, vendor, subdept, subdept_start, subdept_end }) {
+  let out = rows;
+
+  if (brand && cols?.brand) {
+    const b = String(brand).trim().toLowerCase();
+    out = out.filter(r => String(r[cols.brand] || '').trim().toLowerCase() === b);
+  }
+  if (vendor) {
+    // Vendor field might be missing in master list; only filter if present.
+    const v = String(vendor).trim().toLowerCase();
+    const vcol = cols?.vendorName || cols?.vendorId;
+    if (vcol) {
+      out = out.filter(r => String(r[vcol] || '').trim().toLowerCase() === v);
+    }
+  }
+
+  // Optional: filter by subdept number if present (but DB subdept filter is the truth for "sales").
+  // This just reduces payload for UX consistency.
+  const sdCol = cols?.subNo;
+  if (sdCol) {
+    if (subdept != null && subdept !== '') {
+      const sd = Number(subdept);
+      if (Number.isFinite(sd)) out = out.filter(r => Number.parseInt(String(r[sdCol] || '0'), 10) === sd);
+    } else if (subdept_start != null && subdept_end != null && subdept_start !== '' && subdept_end !== '') {
+      const a = Number(subdept_start), b = Number(subdept_end);
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        const lo = Math.min(a, b), hi = Math.max(a, b);
+        out = out.filter(r => {
+          const n = Number.parseInt(String(r[sdCol] || '0'), 10);
+          return Number.isFinite(n) && n >= lo && n <= hi;
+        });
+      }
+    }
+  }
+
+  return out;
+}
+
+function masterRowToMovementShape(r, cols) {
+  const codeRaw = cols?.code ? r[cols.code] : '';
+  const code13 = canon13FromMaster(codeRaw);
+
+  const brand = cols?.brand ? String(r[cols.brand] ?? '').trim() : '';
+  const desc  = cols?.desc  ? String(r[cols.desc] ?? '').trim()  : '';
+
+  const subNo = cols?.subNo ? String(r[cols.subNo] ?? '').trim() : '';
+  const subDesc = cols?.subDesc ? String(r[cols.subDesc] ?? '').trim() : '';
+
+  const catNo = cols?.catNo ? String(r[cols.catNo] ?? '').trim() : '';
+  const catDesc = cols?.catDesc ? String(r[cols.catDesc] ?? '').trim() : '';
+
+  const vendorId = cols?.vendorId ? String(r[cols.vendorId] ?? '').trim() : '';
+  const vendorName = cols?.vendorName ? String(r[cols.vendorName] ?? '').trim() : '';
+
+  return {
+    "Item-Code": code13,
+    "Item-Brand": brand,
+    "Item-POS description": desc,
+    "Sub-department-Number": subNo,
+    "Sub-department-Description": subDesc,
+    "Category-Number": catNo,
+    "Category-Description": catDesc,
+    "Vendor-ID": vendorId,
+    "Vendor-Name": vendorName,
+    "Units-Sum": 0,
+    "Amount-Sum": 0
+  };
+}
+
 // ===== Department Sales routes =====
 
 // Meta: last complete week-end (Saturday) and the 5 week ranges we’ll use.
@@ -1195,6 +1394,193 @@ if (req.query.upcs && String(req.query.upcs).trim()) {
   csvStream.pipe(res);
   for (const row of rows) csvStream.write(row);
   csvStream.end();
+});
+
+// ===== Non-Movement (Master List items with NO sales in Movement DB) =====
+
+function buildMovementParamsFromQuery(q, { allowUpcList = false } = {}) {
+  const vr = validateDateRange(q);
+  if (vr.error) return { error: vr.error };
+
+  const params = { start: vr.start, end: vr.end };
+
+  if (q.subdept) params.subdept = Number.parseInt(q.subdept);
+  if (q.subdept_start) params.subdept_start = Number.parseInt(q.subdept_start);
+  if (q.subdept_end) params.subdept_end = Number.parseInt(q.subdept_end);
+  if (q.brand) params.brand = String(q.brand).trim();
+  if (q.vendor) params.vendor = String(q.vendor).trim();
+
+  let upcs = [];
+  if (allowUpcList && q.upcs && String(q.upcs).trim()) {
+    const rawTokens = Array.isArray(q.upcs) ? q.upcs : String(q.upcs).split(/[\s,;\n]+/);
+    const cand = new Set();
+    for (const t of rawTokens) {
+      for (const c of expandUpcCandidates(t)) cand.add(c);
+    }
+    upcs = Array.from(cand);
+  }
+
+  return { params, upcs };
+}
+
+async function computeNonMovement({ start, end, subdept, subdept_start, subdept_end, brand, vendor, upcUniverse = null }) {
+  // 1) Candidate universe from Master List
+  let masterCols = null;
+  let masterRows = [];
+
+  if (Array.isArray(upcUniverse) && upcUniverse.length) {
+    // UPC list mode: fetch only those from master, via bulk-upc
+    const fetched = await fetchMasterByUpcs(upcUniverse);
+    masterCols = fetched.cols;
+    masterRows = fetched.rows;
+  } else {
+    const fetched = await fetchAllMasterItems();
+    masterCols = fetched.cols;
+    masterRows = fetched.rows;
+  }
+
+  if (!masterRows || !masterRows.length) {
+    // Distinguish "no CSV uploaded" vs "empty result"
+    // Item List Handler returns { total:0, rows:[] } if missing CSV.
+    // We'll message it clearly.
+    return { rows: [], warning: 'Master List is empty or not available (no CSV uploaded to Item List Handler).' };
+  }
+
+  // Optional filter candidates by master fields when available (brand/vendor/subdept)
+  masterRows = filterMasterRows(masterRows, masterCols, { brand, vendor, subdept, subdept_start, subdept_end });
+
+  // 2) Sold set from Movement DB (truth for filters)
+  const movementParams = { start, end };
+  if (subdept != null) movementParams.subdept = subdept;
+  if (subdept_start != null) movementParams.subdept_start = subdept_start;
+  if (subdept_end != null) movementParams.subdept_end = subdept_end;
+  if (brand) movementParams.brand = brand;
+  if (vendor) movementParams.vendor = vendor;
+
+  // If UPC universe is provided and is manageable, pass it down so SQL can apply IN (...)
+  const sold = soldCodesInRange(movementParams, Array.isArray(upcUniverse) ? upcUniverse : null);
+  const soldSet = new Set((sold || []).map(String));
+
+  // 3) Subtract: master items whose canonical 13-digit code is NOT in sold set
+  const out = [];
+  for (const r of masterRows) {
+    const codeRaw = masterCols?.code ? r[masterCols.code] : '';
+    const code13 = canon13FromMaster(codeRaw);
+    if (!code13) continue;
+
+    // If UPC universe mode, enforce universe again in case master fetch included extras (shouldn't)
+    if (Array.isArray(upcUniverse) && upcUniverse.length) {
+      if (!upcUniverse.includes(code13)) continue;
+    }
+
+    if (!soldSet.has(code13)) {
+      out.push(masterRowToMovementShape(r, masterCols));
+    }
+  }
+
+  return { rows: out, warning: null };
+}
+
+// GET /api/non-movement?start&end&subdept&subdept_start&subdept_end&brand&vendor
+app.get('/api/non-movement', async (req, res) => {
+  try {
+    const vr = validateDateRange(req.query);
+    if (vr.error) return res.status(400).json({ error: vr.error });
+
+    const q = req.query || {};
+    const params = {
+      start: vr.start,
+      end: vr.end,
+      subdept: q.subdept ? Number.parseInt(q.subdept) : undefined,
+      subdept_start: q.subdept_start ? Number.parseInt(q.subdept_start) : undefined,
+      subdept_end: q.subdept_end ? Number.parseInt(q.subdept_end) : undefined,
+      brand: q.brand ? String(q.brand).trim() : undefined,
+      vendor: q.vendor ? String(q.vendor).trim() : undefined
+    };
+
+    const { rows, warning } = await computeNonMovement({ ...params, upcUniverse: null });
+
+    // If master list missing, we return 502-ish semantics; you asked for a clear error.
+    if (warning && !rows.length) {
+      return res.status(502).json({ error: warning });
+    }
+
+    res.json(rows);
+  } catch (e) {
+    console.error('[non-movement] failed:', e);
+    res.status(500).json({ error: 'non-movement-failed', message: e.message });
+  }
+});
+
+// POST /api/non-movement/search-upcs  body: {start,end,filters...,upcs:[...]}
+app.post('/api/non-movement/search-upcs', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const vr = validateDateRange(body);
+    if (vr.error) return res.status(400).json({ error: vr.error });
+
+    const rawTokens = Array.isArray(body.upcs)
+      ? body.upcs
+      : String(body.upcs || '').split(/[\s,;\n]+/);
+
+    const cand = new Set();
+    for (const t of rawTokens) {
+      for (const c of expandUpcCandidates(t)) cand.add(c);
+    }
+    const upcUniverse = Array.from(cand);
+    if (!upcUniverse.length) return res.json([]);
+
+    const params = {
+      start: vr.start,
+      end: vr.end,
+      subdept: body.subdept ? Number.parseInt(body.subdept) : undefined,
+      subdept_start: (body.subdept_start != null && body.subdept_start !== '') ? Number.parseInt(body.subdept_start) : undefined,
+      subdept_end: (body.subdept_end != null && body.subdept_end !== '') ? Number.parseInt(body.subdept_end) : undefined,
+      brand: body.brand ? String(body.brand).trim() : undefined,
+      vendor: body.vendor ? String(body.vendor).trim() : undefined
+    };
+
+    const { rows, warning } = await computeNonMovement({ ...params, upcUniverse });
+
+    // In UPC-list mode, if master list missing, return clear error
+    if (warning && !rows.length) {
+      return res.status(502).json({ error: warning });
+    }
+
+    res.json(rows);
+  } catch (e) {
+    console.error('[non-movement] search-upcs failed:', e);
+    res.status(500).json({ error: 'non-movement-failed', message: e.message });
+  }
+});
+
+// GET /api/non-movement/export?... (+ optional upcs=...)
+app.get('/api/non-movement/export', async (req, res) => {
+  try {
+    const { params, upcs, error } = buildMovementParamsFromQuery(req.query, { allowUpcList: true });
+    if (error) return res.status(400).json({ error });
+
+    const { rows, warning } = await computeNonMovement({
+      ...params,
+      upcUniverse: upcs?.length ? upcs : null
+    });
+
+    if (warning && !rows.length) {
+      return res.status(502).json({ error: warning });
+    }
+
+    const filename = `non_movement_${params.start.replace(/-/g,'')}_${params.end.replace(/-/g,'')}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const csvStream = csvFormat({ headers: true });
+    csvStream.pipe(res);
+    for (const row of rows) csvStream.write(row);
+    csvStream.end();
+  } catch (e) {
+    console.error('[non-movement] export failed:', e);
+    res.status(500).json({ error: 'non-movement-export-failed', message: e.message });
+  }
 });
 
 // debug remove later
