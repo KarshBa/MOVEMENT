@@ -791,7 +791,10 @@ function detectMasterCols(sampleRow) {
   // Try to match the aliases you already use in Item List Handler
   const code = pick(['code','upc','itemcode','maincode','mainitemcode']) || keys[0];
   const brand = pick(['brand','mainitembrand','itembrand','main item-brand','main item brand']);
-  const desc = pick(['description','desc','mainitemdescription','main item-description','main item description','posdescription','item-posdescription','item-pos description','item-posdescription']);
+  const desc = pick([
+    'description','desc','mainitemdescription','main item-description','main item description',
+    'posdescription','item-posdescription','item-pos description','item-posdescription'
+  ]);
   const subNo = pick(['subdepartmentnumber','subdeptnumber','subdepartmentno','subdeptno','totalizer-number','totalizernumber']);
   const subDesc = pick(['subdepartmentdescription','subdepartmentdesc','subdeptdescription','totalizer-description','totalizerdescription']);
   const catNo = pick(['categorynumber','category-no','category-number','catnumber','catno']);
@@ -799,7 +802,11 @@ function detectMasterCols(sampleRow) {
   const vendorId = pick(['vendorid','vendor-id','vendor_id']);
   const vendorName = pick(['vendorname','vendor-name','vendor','vendor_name']);
 
-  return { code, brand, desc, subNo, subDesc, catNo, catDesc, vendorId, vendorName };
+  // NEW: "POS information-Not for sale" (may appear with literal quotes in raw header)
+  // normKey('"POS information-Not for sale"') => 'posinformationnotforsale'
+  const notForSale = pick(['posinformationnotforsale']);
+
+  return { code, brand, desc, subNo, subDesc, catNo, catDesc, vendorId, vendorName, notForSale };
 }
 
 async function fetchJsonWithTimeout(url) {
@@ -870,7 +877,13 @@ async function fetchMasterByUpcs(upcList13) {
   // probe 1 item (via /api/items) to detect cols — bulk-upc returns raw rows, but we need mapping
   const { cols } = await fetchAllMasterItems().catch(() => ({ cols: null }));
   // If that failed, we can still return rows but with minimal mapping
-  const useCols = cols || { code: null, brand: null, desc: null, subNo: null, subDesc: null, catNo: null, catDesc: null, vendorId: null, vendorName: null };
+  const useCols = cols || {
+    code: null, brand: null, desc: null,
+    subNo: null, subDesc: null,
+    catNo: null, catDesc: null,
+    vendorId: null, vendorName: null,
+    notForSale: null
+  };
 
   const CHUNK = Number(process.env.ITEM_LIST_BULK_CHUNK || 300);
   const parts = chunk(codes, CHUNK);
@@ -891,6 +904,19 @@ async function fetchMasterByUpcs(upcList13) {
 // Keep it strict-ish: case-insensitive equality after trim.
 function filterMasterRows(rows, cols, { brand, vendor, subdept, subdept_start, subdept_end }) {
   let out = rows;
+
+  // NEW: exclude items flagged Not for sale (expect 0/1/blank)
+  if (cols?.notForSale) {
+    const k = cols.notForSale;
+    out = out.filter(r => {
+      const v = r?.[k];
+      if (v === 1) return false;
+      if (v === 0) return true;
+      const s = String(v ?? '').trim();
+      if (!s) return true;     // blank => keep
+      return s !== '1';        // only '1' is excluded
+    });
+  }
 
   if (brand && cols?.brand) {
     const b = String(brand).trim().toLowerCase();
@@ -951,6 +977,7 @@ function masterRowToMovementShape(r, cols) {
     "Sub-department-Description": subDesc,
     "Category-Number": catNo,
     "Category-Description": catDesc,
+    "POS information-Not for sale": cols?.notForSale ? (r[cols.notForSale] ?? '') : '',
     "Vendor-ID": vendorId,
     "Vendor-Name": vendorName,
     "Units-Sum": 0,
