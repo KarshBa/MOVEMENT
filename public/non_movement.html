@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Non-Movement</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy"
+      content="script-src 'self' https://item-list-handler.onrender.com">
+  <link rel="stylesheet" href="./style.css?=v1" />
+</head>
+<body>
+  <header><h1>Non-Movement</h1></header>
+
+  <main>
+    <section class="flex" aria-label="filters">
+      <div class="input-group" style="max-width:220px;">
+        <label for="start">Start date</label>
+        <input id="start" type="date" />
+      </div>
+
+      <div class="input-group" style="max-width:220px;">
+        <label for="end">End date</label>
+        <input id="end" type="date" />
+      </div>
+
+      <div class="input-group" style="max-width:360px; position:relative;">
+        <label for="brand">Brand</label>
+        <input id="brand" type="text" placeholder="Type a brand…" autocomplete="off" />
+        <ul id="brandList" class="dropdown" style="display:none; position:absolute; left:0; right:0; max-height:240px; overflow:auto; z-index:10;"></ul>
+      </div>
+
+      <div class="input-group" style="max-width:360px; position:relative;">
+        <label for="vendor">Vendor</label>
+        <input id="vendor" type="text" placeholder="Type a vendor…" autocomplete="off" />
+        <ul id="vendorList" class="dropdown" style="display:none; position:absolute; left:0; right:0; max-height:240px; overflow:auto; z-index:10;"></ul>
+      </div>
+
+      <div class="input-group" style="max-width:420px;">
+        <label for="subdept">Sub-department</label>
+        <select id="subdept"></select>
+      </div>
+
+      <div class="input-group" style="max-width:420px;">
+        <label for="upcs">UPCs (comma, space, or newline separated)</label>
+        <textarea id="upcs" rows="3" style="width:100%;padding:.55rem;border:1px solid #ccc;border-radius:6px;"></textarea>
+      </div>
+
+      <!-- Advanced range toggle (item_movement.js expects this pattern) -->
+      <div class="input-group" style="max-width:420px;">
+        <label style="display:flex; gap:.5rem; align-items:center;">
+          <input id="toggleAdvanced" type="checkbox" />
+          Advanced subdept range
+        </label>
+
+        <div class="flex" id="advWrap" style="display:none; margin-top:.5rem;">
+          <div class="input-group" style="max-width:160px; margin-bottom:0;">
+            <label for="subStart">Start</label>
+            <input id="subStart" type="number" inputmode="numeric" />
+          </div>
+          <div class="input-group" style="max-width:160px; margin-bottom:0;">
+            <label for="subEnd">End</label>
+            <input id="subEnd" type="number" inputmode="numeric" />
+          </div>
+        </div>
+      </div>
+
+      <button id="btnSubmit">Submit</button>
+      <button id="btnExport" class="success">Export CSV</button>
+
+      <div class="muted" id="dbEndsWrap" style="margin-left:auto;">
+        Database Ends: <span id="dbEnds">—</span>
+      </div>
+
+      <span id="totalsWrap"
+        style="margin-left:auto; align-self:flex-end; white-space:nowrap; font-size:.95rem;">
+        <strong>Count:</strong> <span id="countItems">0</span>
+      </span>
+    </section>
+
+    <div id="info" class="page-info">Set filters and submit.</div>
+
+    <div class="table-scroll">
+      <table id="results" style="display:none;">
+        <thead>
+          <tr>
+            <th class="sortable" data-key="Item-Code">Item-Code</th>
+            <th class="sortable" data-key="Item-Brand">Item-Brand</th>
+            <th class="sortable" data-key="Item-POS description">Item-POS description</th>
+            <th class="sortable" data-key="Sub-department-Number">Sub-department-Number</th>
+            <th class="sortable" data-key="Sub-department-Description">Sub-department-Description</th>
+            <th class="sortable" data-key="Category-Number">Category-Number</th>
+            <th class="sortable" data-key="Category-Description">Category-Description</th>
+            <th class="sortable" data-key="Vendor-ID">Vendor-ID</th>
+            <th class="sortable" data-key="Vendor-Name">Vendor-Name</th>
+            <th class="sortable right" data-key="Units-Sum">Units-Sum</th>
+            <th class="sortable right" data-key="Amount-Sum">Amount-Sum</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script type="module" src="client.js?v=7"></script>
+  <script type="module" src="./non_movement.js?v=1"></script>
+</body>
+</html>
