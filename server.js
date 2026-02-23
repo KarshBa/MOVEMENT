@@ -1476,16 +1476,32 @@ async function computeNonMovement({ start, end, subdept, subdept_start, subdept_
   // Optional filter candidates by master fields when available (brand/vendor/subdept)
   masterRows = filterMasterRows(masterRows, masterCols, { brand, vendor, subdept, subdept_start, subdept_end });
 
-  // 2) Sold set from Movement DB (truth for filters)
+  // 2) Sold set from Movement DB
+  // IMPORTANT: For non-movement, "sold" must mean sold at all in the period,
+  // NOT "sold where txn vendor/brand matches" (those fields can be inconsistent).
+  // We *do* restrict the query to the candidate UPCs for speed + correctness.
+
   const movementParams = { start, end };
   if (subdept != null) movementParams.subdept = subdept;
   if (subdept_start != null) movementParams.subdept_start = subdept_start;
   if (subdept_end != null) movementParams.subdept_end = subdept_end;
-  if (brand) movementParams.brand = brand;
-  if (vendor) movementParams.vendor = vendor;
 
-  // If UPC universe is provided and is manageable, pass it down so SQL can apply IN (...)
-  const sold = soldCodesInRange(movementParams, Array.isArray(upcUniverse) ? upcUniverse : null);
+  // Build candidate universe AFTER master filters (brand/vendor/etc.)
+  const candidateCodes = [];
+  for (const r of masterRows) {
+    const codeRaw = masterCols?.code ? r[masterCols.code] : '';
+    const code13 = canon13FromMaster(codeRaw);
+    if (code13) candidateCodes.push(code13);
+  }
+
+  // If caller provided an explicit UPC universe, intersect it with candidates
+  let soldUniverse = candidateCodes;
+  if (Array.isArray(upcUniverse) && upcUniverse.length) {
+    const u = new Set(upcUniverse);
+    soldUniverse = candidateCodes.filter(c => u.has(c));
+  }
+
+  const sold = soldCodesInRange(movementParams, soldUniverse);
   const soldSet = new Set((sold || []).map(String));
 
   // 3) Subtract: master items whose canonical 13-digit code is NOT in sold set
