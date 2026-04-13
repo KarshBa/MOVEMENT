@@ -15,7 +15,7 @@ const REQUIRED_HEADERS = [
   "Date","Item-Code","Item-Brand","Item-POS description",
   "Sub-department-Number","Sub-department-Description",
   "Category-Number","Category-Description",
-  "Vendor-ID","Vendor-Name",
+  "Vendor-ID","Vendor-Name","Transaction-Number",
   "Units-Sum","Amount-Sum","Weight/Volume-Sum",
   "Bottom line-Profit","Bottom line-Margin",
   "Bottom line-Rank","Bottom line-Ratio",
@@ -27,7 +27,7 @@ const SYNONYMS = new Map([
   ['quantity','Units-Sum'],['amount','Amount-Sum'],['weight/volume','Weight/Volume-Sum'],
   ['category-number','Category-Number'],['category-description','Category-Description'],
   ['vendor-id','Vendor-ID'],['vendor-name','Vendor-Name'],
-  ['transaction-number',null],['operator validated',null],
+  ['transaction-number','Transaction-Number'],['operator validated',null],
 ]);
 const MIN_HEADERS = ['Date','Item-Code','Item-POS description','Sub-department-Number','Sub-department-Description','Units-Sum','Amount-Sum','Weight/Volume-Sum'];
 const NUMERIC_HEADERS = new Set(['Units-Sum','Amount-Sum','Weight/Volume-Sum','Bottom line-Profit','Bottom line-Margin','Bottom line-Rank','Bottom line-Ratio','Proportion-Rank','Proportion-Ratio','Category-Number','Sub-department-Number']);
@@ -62,14 +62,28 @@ function parseDateToISO(v){
 function remapRowToCanonical(rec){ const out={}; for(const [k,v] of Object.entries(rec)){ const norm=normalizeHeader(k); const canon=CANONICAL_FROM_NORM.get(norm); if(canon) out[canon]=v; } return out; }
 function fillDefaultsToRequired(rec){ const out={}; for(const key of REQUIRED_HEADERS){ let v=rec[key]; if(v==null) v=''; if(NUMERIC_HEADERS.has(key)) v=numberOrZero(v); out[key]=v; } return out; }
 function canonicalize(row){
-  const obj={ Date:row.date_iso,"Item-Code":row.item_code,"Item-Brand":(row.item_brand||'').trim(),
-    "Item-POS description":(row.item_pos_desc||'').trim(),"Sub-department-Number":String(row.subdept_no??0),
-    "Sub-department-Description":(row.subdept_desc||'').trim(),"Category-Number":String(row.category_no??0),
-    "Category-Description":(row.category_desc||'').trim(),"Vendor-ID":(row.vendor_id||'').trim(),"Vendor-Name":(row.vendor_name||'').trim(),
-    "Units-Sum":row.units_sum.toFixed(6),"Amount-Sum":row.amount_sum.toFixed(6),"Weight/Volume-Sum":row.weight_volume_sum.toFixed(6),
-    "Bottom line-Profit":row.bl_profit.toFixed(6),"Bottom line-Margin":row.bl_margin.toFixed(6),
-    "Bottom line-Rank":row.bl_rank.toFixed(6),"Bottom line-Ratio":row.bl_ratio.toFixed(6),
-    "Proportion-Rank":row.prop_rank.toFixed(6),"Proportion-Ratio":row.prop_ratio.toFixed(6) };
+  const obj = {
+    Date: row.date_iso,
+    "Item-Code": row.item_code,
+    "Item-Brand": (row.item_brand || '').trim(),
+    "Item-POS description": (row.item_pos_desc || '').trim(),
+    "Sub-department-Number": String(row.subdept_no ?? 0),
+    "Sub-department-Description": (row.subdept_desc || '').trim(),
+    "Category-Number": String(row.category_no ?? 0),
+    "Category-Description": (row.category_desc || '').trim(),
+    "Vendor-ID": (row.vendor_id || '').trim(),
+    "Vendor-Name": (row.vendor_name || '').trim(),
+    "Transaction-Number": (row.txn_no || '').trim(),
+    "Units-Sum": row.units_sum.toFixed(6),
+    "Amount-Sum": row.amount_sum.toFixed(6),
+    "Weight/Volume-Sum": row.weight_volume_sum.toFixed(6),
+    "Bottom line-Profit": row.bl_profit.toFixed(6),
+    "Bottom line-Margin": row.bl_margin.toFixed(6),
+    "Bottom line-Rank": row.bl_rank.toFixed(6),
+    "Bottom line-Ratio": row.bl_ratio.toFixed(6),
+    "Proportion-Rank": row.prop_rank.toFixed(6),
+    "Proportion-Ratio": row.prop_ratio.toFixed(6)
+  };
   return JSON.stringify(obj);
 }
 function sha256(s){ return crypto.createHash('sha256').update(s).digest('hex'); }
@@ -109,15 +123,29 @@ async function processUploadJob(filePath, originalName){
   let processed=0; const beforeAll=countRows(); const sampleDates=new Set(); const subPairs=new Set(); let batch=[];
   for(const r of parsed.rows){
     const date_iso=parseDateToISO(r['Date']); if(!date_iso) continue;
-    const row={ date_iso, item_code:pad13(r['Item-Code']), item_brand:(r['Item-Brand']||'').trim(),
-      item_pos_desc:(r['Item-POS description']||'').trim(), subdept_no:Number.parseInt(r['Sub-department-Number'])||0,
-      subdept_desc:(r['Sub-department-Description']||'').trim(), category_no:Number.parseInt(r['Category-Number'])||0,
-      category_desc:(r['Category-Description']||'').trim(), vendor_id:(r['Vendor-ID']||'').trim(), vendor_name:(r['Vendor-Name']||'').trim(),
-      units_sum:numberOrZero(r['Units-Sum']), amount_sum:numberOrZero(r['Amount-Sum']), weight_volume_sum:numberOrZero(r['Weight/Volume-Sum']),
-      bl_profit:numberOrZero(r['Bottom line-Profit']), bl_margin:numberOrZero(r['Bottom line-Margin']),
-      bl_rank:numberOrZero(r['Bottom line-Rank']), bl_ratio:numberOrZero(r['Bottom line-Ratio']),
-      prop_rank:numberOrZero(r['Proportion-Rank']), prop_ratio:numberOrZero(r['Proportion-Ratio']),
-      source_filename:originalName };
+    const row = {
+      date_iso,
+      item_code: pad13(r['Item-Code']),
+      item_brand: (r['Item-Brand'] || '').trim(),
+      item_pos_desc: (r['Item-POS description'] || '').trim(),
+      subdept_no: Number.parseInt(r['Sub-department-Number']) || 0,
+      subdept_desc: (r['Sub-department-Description'] || '').trim(),
+      category_no: Number.parseInt(r['Category-Number']) || 0,
+      category_desc: (r['Category-Description'] || '').trim(),
+      vendor_id: (r['Vendor-ID'] || '').trim(),
+      vendor_name: (r['Vendor-Name'] || '').trim(),
+      txn_no: String(r['Transaction-Number'] || '').trim(),
+      units_sum: numberOrZero(r['Units-Sum']),
+      amount_sum: numberOrZero(r['Amount-Sum']),
+      weight_volume_sum: numberOrZero(r['Weight/Volume-Sum']),
+      bl_profit: numberOrZero(r['Bottom line-Profit']),
+      bl_margin: numberOrZero(r['Bottom line-Margin']),
+      bl_rank: numberOrZero(r['Bottom line-Rank']),
+      bl_ratio: numberOrZero(r['Bottom line-Ratio']),
+      prop_rank: numberOrZero(r['Proportion-Rank']),
+      prop_ratio: numberOrZero(r['Proportion-Ratio']),
+      source_filename: originalName
+    };
     row.content_hash=sha256(canonicalize(row));
     batch.push(row); processed++; sampleDates.add(date_iso);
     if(row.subdept_no && row.subdept_desc) subPairs.add(`${row.subdept_no}::${row.subdept_desc}`);
