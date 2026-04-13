@@ -1,3 +1,4 @@
+//server.js
 import 'dotenv/config';
 import path from 'path';
 import fs from 'fs';
@@ -151,7 +152,7 @@ const REQUIRED_HEADERS = [
   "Date", "Item-Code", "Item-Brand", "Item-POS description",
   "Sub-department-Number", "Sub-department-Description",
   "Category-Number", "Category-Description",
-  "Vendor-ID", "Vendor-Name",
+  "Vendor-ID", "Vendor-Name", "Transaction-Number",
   "Units-Sum", "Amount-Sum", "Weight/Volume-Sum",
   "Bottom line-Profit", "Bottom line-Margin",
   "Bottom line-Rank", "Bottom line-Ratio",
